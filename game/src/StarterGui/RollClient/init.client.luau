@@ -26,6 +26,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local Workspace = game:GetService("Workspace")
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
@@ -86,6 +87,459 @@ local function rollResultToVisualEntry(result)
 		OddsText = result.chance,
 		Icon = configEntry and configEntry.icon or "",
 	}
+end
+
+--==================================================
+-- PRESENTATION HELPERS (visual only)
+-- Everything in this section only changes how a roll is DRAWN. Roll odds, rewards,
+-- data and remotes are untouched.
+--==================================================
+
+local WINNER_SCALE = 1.18 -- restrained scale-up for the centred winner (BaseRoll.FinalSlimeScale was 1.4)
+local WINNER_SPIN_DEGREES_PER_SECOND = 40
+local MIN_LEGIBLE_LABEL_HEIGHT = 8 -- px; below this the name / odds are skipped rather than drawn unreadably
+local VIEWPORT_FIELD_OF_VIEW = 30
+local GENERIC_CHICKEN_NAME = "White Chicken" -- shape used (tinted) when a chicken has no model and no icon
+
+local chickenRankByName = {}
+
+for rank, chicken in ChickenRollConfig.Chickens do
+	chickenRankByName[chicken.name] = rank
+end
+
+local RARITY_TIERS = {
+	{ maxRank = 4, color = Color3.fromRGB(205, 205, 205) },
+	{ maxRank = 8, color = Color3.fromRGB(95, 205, 95) },
+	{ maxRank = 13, color = Color3.fromRGB(70, 145, 255) },
+	{ maxRank = 19, color = Color3.fromRGB(170, 95, 255) },
+	{ maxRank = 26, color = Color3.fromRGB(255, 95, 200) },
+	{ maxRank = 33, color = Color3.fromRGB(255, 150, 55) },
+	{ maxRank = 41, color = Color3.fromRGB(255, 75, 75) },
+	{ maxRank = math.huge, color = Color3.fromRGB(255, 215, 65) },
+}
+
+local function getRarityColor(chickenName)
+	local rank = chickenRankByName[chickenName] or 1
+
+	for _, tier in RARITY_TIERS do
+		if rank <= tier.maxRank then
+			return tier.color
+		end
+	end
+
+	return RARITY_TIERS[#RARITY_TIERS].color
+end
+
+-- "1 in 250,000,000" -> "1/250M"  (K / M / B / T)
+local ODDS_UNITS = {
+	{ 1e12, "T" },
+	{ 1e9, "B" },
+	{ 1e6, "M" },
+	{ 1e3, "K" },
+}
+
+local function compactNumber(value)
+	for _, unit in ODDS_UNITS do
+		if value >= unit[1] then
+			local scaled = value / unit[1]
+			local text = if scaled >= 100 or scaled % 1 == 0
+				then string.format("%d", math.floor(scaled + 0.5))
+				else string.format("%.1f", scaled)
+
+			return text:gsub("%.0$", "") .. unit[2]
+		end
+	end
+
+	return string.format("%d", math.floor(value + 0.5))
+end
+
+local function formatOdds(oddsText)
+	if type(oddsText) ~= "string" then
+		return ""
+	end
+
+	local denominator = oddsText:match("1%s*in%s*([%d,]+)") or oddsText:match("1%s*/%s*([%d,]+)")
+	local value = denominator and tonumber((denominator:gsub(",", "")))
+
+	if not value then
+		return oddsText
+	end
+
+	return "1/" .. compactNumber(value)
+end
+
+-- "1/30 (3.3%)": compact odds plus the percentage chance when it is big enough to be meaningful
+local function formatPercent(value)
+	local percent = 100 / value
+
+	if percent < 0.01 then
+		return nil
+	end
+
+	local text = if percent >= 1 then string.format("%.1f", percent) else string.format("%.2f", percent)
+
+	if text:find("%.") then
+		text = text:gsub("0+$", ""):gsub("%.$", "")
+	end
+
+	return text .. "%"
+end
+
+local function formatChance(oddsText)
+	local odds = formatOdds(oddsText)
+
+	if type(oddsText) ~= "string" then
+		return odds
+	end
+
+	local denominator = oddsText:match("1%s*in%s*([%d,]+)") or oddsText:match("1%s*/%s*([%d,]+)")
+	local value = denominator and tonumber((denominator:gsub(",", "")))
+	local percent = value and value > 0 and formatPercent(value)
+
+	if percent then
+		return `{odds} ({percent})`
+	end
+
+	return odds
+end
+
+-- Real chicken models come from Workspace/Chicken (kept always-streamed so they exist on
+-- every client). Names are matched ignoring case; if several models share a name the one
+-- with the most parts wins (some copies are empty shells).
+local function countBaseParts(model)
+	local count = 0
+
+	for _, descendant in model:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			count += 1
+		end
+	end
+
+	return count
+end
+
+local function findChickenModel(chickenName)
+	local folder = Workspace:FindFirstChild("Chicken")
+
+	if not folder then
+		return nil
+	end
+
+	local wanted = string.lower(chickenName)
+	local best, bestParts = nil, 0
+
+	for _, child in folder:GetChildren() do
+		if child:IsA("Model") and string.lower(child.Name) == wanted then
+			local parts = countBaseParts(child)
+
+			if parts > bestParts then
+				best, bestParts = child, parts
+			end
+		end
+	end
+
+	return best
+end
+
+local function shouldStrip(instance)
+	return instance:IsA("LuaSourceContainer")
+		or instance:IsA("Sound")
+		or instance:IsA("ParticleEmitter")
+		or instance:IsA("Beam")
+		or instance:IsA("Trail")
+		or instance:IsA("Light")
+		or instance:IsA("Humanoid")
+		or instance:IsA("Animator")
+		or instance:IsA("Constraint")
+		or instance:IsA("WeldConstraint")
+		or instance:IsA("JointInstance")
+		or instance:IsA("ProximityPrompt")
+		or instance:IsA("ClickDetector")
+		or instance:IsA("BillboardGui")
+		or instance:IsA("SurfaceGui")
+		or instance:IsA("Highlight")
+end
+
+-- Clone once, strip everything that is not geometry, anchor it, centre it on the origin.
+local function buildDisplayTemplate(source)
+	local cloned, clone = pcall(function()
+		return source:Clone()
+	end)
+
+	if not cloned or not clone then
+		return nil
+	end
+
+	for _, descendant in clone:GetDescendants() do
+		if shouldStrip(descendant) then
+			descendant:Destroy()
+		end
+	end
+
+	for _, descendant in clone:GetDescendants() do
+		if descendant:IsA("BasePart") then
+			descendant.Anchored = true
+			descendant.CanCollide = false
+			descendant.CanTouch = false
+			descendant.CanQuery = false
+		end
+	end
+
+	if countBaseParts(clone) == 0 then
+		clone:Destroy()
+		return nil
+	end
+
+	local boundsCFrame, boundsSize = clone:GetBoundingBox()
+	clone.WorldPivot = boundsCFrame
+	clone:PivotTo(CFrame.new())
+
+	return { model = clone, size = boundsSize }
+end
+
+local displayTemplates = {}
+
+local function getDisplayTemplate(chickenName)
+	local key = string.lower(chickenName)
+	local cached = displayTemplates[key]
+
+	if cached then
+		return cached
+	end
+
+	local source = findChickenModel(chickenName)
+
+	if not source then
+		return nil
+	end
+
+	local template = buildDisplayTemplate(source)
+
+	if template then
+		displayTemplates[key] = template
+	end
+
+	return template
+end
+
+-- The chicken models face +X in their own frame (beak and eyes sit on the +X side), so the
+-- camera looks at them from the front, slightly above and to the side (three-quarter view).
+local CAMERA_DIRECTION = Vector3.new(1, 0.28, 0.65).Unit
+
+-- Closest camera distance at which the model (allowing for its slow spin) still fits the frame.
+local function getFitDistance(size, direction, fieldOfView, aspect)
+	local footprint = math.max(size.X, size.Z) * 1.2
+	local box = Vector3.new(footprint, size.Y, footprint)
+	local look = CFrame.lookAt(direction, Vector3.zero)
+	local tanHalf = math.tan(math.rad(fieldOfView / 2))
+	local distance = 0
+
+	for x = -1, 1, 2 do
+		for y = -1, 1, 2 do
+			for z = -1, 1, 2 do
+				local corner = Vector3.new(x * box.X, y * box.Y, z * box.Z) / 2
+				local along = corner:Dot(look.LookVector)
+				local needUp = math.abs(corner:Dot(look.UpVector)) / tanHalf - along
+				local needRight = math.abs(corner:Dot(look.RightVector)) / (tanHalf * aspect) - along
+
+				distance = math.max(distance, needUp, needRight)
+			end
+		end
+	end
+
+	return distance * 1.05
+end
+
+local function clearVisual(item)
+	local viewport = item:FindFirstChild("Viewport")
+
+	if viewport then
+		local old = viewport:FindFirstChild("ChickenModel")
+
+		if old then
+			old:Destroy()
+		end
+
+		viewport.Visible = false
+	end
+
+	local fallback = item:FindFirstChild("Fallback")
+
+	if fallback then
+		fallback.Visible = false
+	end
+
+	if item:IsA("ImageLabel") then
+		item.Image = ""
+	end
+end
+
+local function showModelInViewport(viewport, template, tint)
+	local model = template.model:Clone()
+	model.Name = "ChickenModel"
+
+	if tint then
+		for _, descendant in model:GetDescendants() do
+			if descendant:IsA("BasePart") then
+				descendant.Color = descendant.Color:Lerp(tint, 0.65)
+			end
+		end
+	end
+
+	local camera = viewport.CurrentCamera
+
+	if not camera then
+		camera = Instance.new("Camera")
+		camera.FieldOfView = VIEWPORT_FIELD_OF_VIEW
+		camera.Parent = viewport
+		viewport.CurrentCamera = camera
+	end
+
+	local aspect = if viewport.AbsoluteSize.Y > 0 then viewport.AbsoluteSize.X / viewport.AbsoluteSize.Y else 1.5
+	local distance = getFitDistance(template.size, CAMERA_DIRECTION, camera.FieldOfView, aspect)
+	camera.CFrame = CFrame.lookAt(CAMERA_DIRECTION * distance, Vector3.zero)
+
+	model.Parent = viewport
+	viewport.Visible = true
+end
+
+-- Order: real model -> icon (if one is set) -> generic chicken tinted by rarity -> emoji.
+-- An item is never left blank.
+local function applyChickenVisual(item, entry)
+	clearVisual(item)
+
+	local viewport = item:FindFirstChild("Viewport")
+	local template = getDisplayTemplate(entry.DisplayName)
+
+	if template and viewport then
+		showModelInViewport(viewport, template, nil)
+		return
+	end
+
+	if type(entry.Icon) == "string" and entry.Icon ~= "" then
+		item.Image = entry.Icon
+		return
+	end
+
+	local generic = getDisplayTemplate(GENERIC_CHICKEN_NAME)
+
+	if generic and viewport then
+		showModelInViewport(viewport, generic, getRarityColor(entry.DisplayName))
+		return
+	end
+
+	local fallback = item:FindFirstChild("Fallback")
+
+	if fallback then
+		fallback.TextColor3 = getRarityColor(entry.DisplayName)
+		fallback.Visible = true
+	end
+end
+
+-- Name, odds badge and glow belong to the centred winner only.
+local function hideDetails(item)
+	for _, childName in { "Name", "Badge", "Glow" } do
+		local child = item:FindFirstChild(childName)
+
+		if child then
+			child.Visible = false
+		end
+	end
+end
+
+local winnerSpinConnection = nil
+
+local function stopWinnerSpin()
+	if winnerSpinConnection then
+		winnerSpinConnection:Disconnect()
+		winnerSpinConnection = nil
+	end
+end
+
+local function revealWinner(item, entry)
+	local color = getRarityColor(entry.DisplayName)
+	local info = TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+	local finalItemHeight = item.AbsoluteSize.Y * WINNER_SCALE
+
+	local function fadeText(label)
+		label.TextTransparency = 1
+		TweenService:Create(label, info, { TextTransparency = 0 }):Play()
+
+		local stroke = label:FindFirstChildOfClass("UIStroke")
+
+		if stroke then
+			stroke.Transparency = 1
+			TweenService:Create(stroke, info, { Transparency = 0 }):Play()
+		end
+	end
+
+	local nameLabel = item:FindFirstChild("Name")
+
+	if nameLabel and finalItemHeight * nameLabel.Size.Y.Scale >= MIN_LEGIBLE_LABEL_HEIGHT then
+		nameLabel.Text = entry.DisplayName
+		nameLabel.Visible = true
+		fadeText(nameLabel)
+	end
+
+	local badge = item:FindFirstChild("Badge")
+
+	if badge and finalItemHeight * badge.Size.Y.Scale >= MIN_LEGIBLE_LABEL_HEIGHT then
+		local chanceLabel = badge:FindFirstChild("Chance")
+
+		if chanceLabel then
+			chanceLabel.Text = formatChance(entry.OddsText)
+			fadeText(chanceLabel)
+		end
+
+		local badgeStroke = badge:FindFirstChildOfClass("UIStroke")
+
+		if badgeStroke then
+			badgeStroke.Color = color
+			badgeStroke.Transparency = 1
+			TweenService:Create(badgeStroke, info, { Transparency = 0.1 }):Play()
+		end
+
+		badge.BackgroundTransparency = 1
+		badge.Visible = true
+		TweenService:Create(badge, info, { BackgroundTransparency = 0.2 }):Play()
+	end
+
+	local glow = item:FindFirstChild("Glow")
+
+	if glow then
+		glow.BackgroundColor3 = color
+		glow.BackgroundTransparency = 1
+		glow.Visible = true
+		TweenService:Create(glow, info, { BackgroundTransparency = 0.82 }):Play()
+
+		local glowStroke = glow:FindFirstChildOfClass("UIStroke")
+
+		if glowStroke then
+			glowStroke.Color = color
+			glowStroke.Transparency = 1
+			TweenService:Create(glowStroke, info, { Transparency = 0.4 }):Play()
+		end
+	end
+
+	-- Slow rotation of the real model (icons and fallbacks have nothing to rotate)
+	stopWinnerSpin()
+
+	local viewport = item:FindFirstChild("Viewport")
+	local model = viewport and viewport:FindFirstChild("ChickenModel")
+
+	if model then
+		local angle = 0
+
+		winnerSpinConnection = RunService.RenderStepped:Connect(function(deltaTime)
+			if not model.Parent then
+				stopWinnerSpin()
+				return
+			end
+
+			angle = (angle + WINNER_SPIN_DEGREES_PER_SECOND * deltaTime) % 360
+			model:PivotTo(CFrame.Angles(0, math.rad(angle), 0))
+		end)
+	end
 end
 
 --==================================================
@@ -346,6 +800,12 @@ local function setItemImageTransparency(item, transparency)
 		item.ImageTransparency = transparency
 	end
 
+	local viewport = item:FindFirstChild("Viewport")
+
+	if viewport then
+		viewport.ImageTransparency = transparency
+	end
+
 	for _, descendant in item:GetDescendants() do
 		if descendant:IsA("TextLabel") or descendant:IsA("TextButton") or descendant:IsA("TextBox") then
 			descendant.TextTransparency = transparency
@@ -358,6 +818,14 @@ local function makeRollItemTween(item, tweenInfo, properties)
 	local tween = makeTween(item, tweenInfo, properties)
 
 	if imageTransparency ~= nil then
+		local viewport = item:FindFirstChild("Viewport")
+
+		if viewport then
+			makeTween(viewport, tweenInfo, {
+				ImageTransparency = imageTransparency,
+			})
+		end
+
 		for _, descendant in item:GetDescendants() do
 			if descendant:IsA("TextLabel") or descendant:IsA("TextButton") or descendant:IsA("TextBox") then
 				makeTween(descendant, tweenInfo, {
@@ -388,9 +856,8 @@ end
 
 local function updateRollItem(item, rollEntry)
 	item.Name = rollEntry.DisplayName
-	setItemImage(item, rollEntry.Icon or "")
-	setText(item:FindFirstChild("Chance"), getChanceText(rollEntry))
-	setText(item:FindFirstChild("Name"), rollEntry.DisplayName)
+	applyChickenVisual(item, rollEntry)
+	hideDetails(item)
 end
 
 local function cloneVisualEntry(entry, rollType)
@@ -657,11 +1124,16 @@ local function animateColumnRoll(column, rollEntry, rollTime, allowedLuckEntry)
 		hideSideReelItems(column)
 
 		local scaledSize = UDim2.fromScale(
-			BaseRoll.CenterItemSize.X.Scale * BaseRoll.FinalSlimeScale,
-			BaseRoll.CenterItemSize.Y.Scale * BaseRoll.FinalSlimeScale
+			BaseRoll.CenterItemSize.X.Scale * WINNER_SCALE,
+			BaseRoll.CenterItemSize.Y.Scale * WINNER_SCALE
 		)
-		local scaleInfo =
-			TweenInfo.new(BaseRoll.FinalSlimeScaleTime, BaseRoll.ItemTweenStyle, BaseRoll.ItemTweenDirection)
+		local scaleInfo = TweenInfo.new(
+			math.max(BaseRoll.FinalSlimeScaleTime, 0.25),
+			BaseRoll.ItemTweenStyle,
+			BaseRoll.ItemTweenDirection
+		)
+
+		revealWinner(landedItem, rollEntry)
 
 		makeTween(landedItem, scaleInfo, {
 			Size = scaledSize,
@@ -672,6 +1144,8 @@ local function animateColumnRoll(column, rollEntry, rollTime, allowedLuckEntry)
 end
 
 local function clearColumns()
+	stopWinnerSpin()
+
 	for _, column in columns do
 		columnReels[column] = nil
 		column:Destroy()

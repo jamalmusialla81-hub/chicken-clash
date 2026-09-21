@@ -8,11 +8,11 @@ local BaseRoll = {
 	LuckRollWeight = 30,
 	SlimeRollWeight = 70,
 
-	ColumnWidthScale = 0.14,
-	ColumnHeightScale = 0.5,
+	ColumnWidthScale = 0.26,
+	ColumnHeightScale = 0.75,
 	ColumnGapScale = 0.04,
 	CenterItemSize = UDim2.fromScale(0.82, 0.82),
-	EdgeItemSize = UDim2.fromScale(0, 0),
+	EdgeItemSize = UDim2.fromScale(0.3, 0.3),
 
 	ColumnTweenTime = 0.25,
 	MiddlePaddingScale = 0.1,
