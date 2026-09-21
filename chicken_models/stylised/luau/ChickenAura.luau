@@ -31,7 +31,10 @@ end
 
 function Aura.defaultQuality(): number
 	local q = UserGameSettings.SavedQualityLevel.Value
-	if q <= 2 then
+	if q == 0 then
+		-- "Automatic": full effects on desktop, reduced on touch devices
+		return game:GetService("UserInputService").TouchEnabled and 1 or 2
+	elseif q <= 2 then
 		return 0
 	elseif q <= 5 then
 		return 1

@@ -120,7 +120,8 @@ function Loco:_restFootTarget(leg)
 	origin += cf:VectorToWorldSpace(Vector3.new(0, 0, leg.ankleLocal.Z - leg.hipLocal.Z))
 	local hit = self:_groundAt(origin)
 	if hit then
-		return hit.Position + hit.Normal * ANKLE_H, hit.Normal, true
+		local n = hit.Normal.Y > 0.55 and hit.Normal or Vector3.yAxis -- stair risers / edges are not ground to stand on
+		return hit.Position + n * ANKLE_H, n, true
 	end
 	return origin - Vector3.new(0, RAY_UP + leg.L1 + leg.L2 * 0.85, 0), Vector3.yAxis, false
 end
@@ -201,11 +202,24 @@ function Loco:_updateSteps(dt: number, speed: number, moveDir: Vector3, airborne
 			leg.ideal, leg.idealNormal, leg.grounded = ideal, normal, grounded
 		end
 	end
+	if not airborne then
+		-- remote chickens do not report Freefall to this client, so also detect it from geometry:
+		-- if the ground is farther below both hips than the legs can reach, the chicken is in the air
+		local far = true
+		for _, leg in pairs(self.legs) do
+			local hipY = (self.root.CFrame * CFrame.new(leg.hipLocal)).Position.Y
+			if not leg.grounded or hipY - leg.ideal.Y < (leg.L1 + leg.L2) * 1.1 then
+				far = false
+			end
+		end
+		airborne = far
+	end
+	self.airborne = airborne
 	if airborne then
 		for _, leg in pairs(self.legs) do
 			leg.planted = true
 			local hangTarget = leg.ideal + Vector3.new(0, 0.9, 0)
-			leg.pos = leg.pos:Lerp(hangTarget, math.min(dt * 10, 1))
+			leg.pos = hangTarget -- locked to the body: smoothing would lag far behind at fall speed
 			leg.normal = leg.normal:Lerp(Vector3.yAxis, math.min(dt * 8, 1)).Unit
 		end
 		return
@@ -223,8 +237,9 @@ function Loco:_updateSteps(dt: number, speed: number, moveDir: Vector3, airborne
 				-- land on the freshly detected ground under the target
 				local hit = workspace:Raycast(leg.stepTo + Vector3.new(0, RAY_UP, 0), Vector3.new(0, -(RAY_UP + RAY_DOWN), 0), self.rayParams)
 				if hit then
-					leg.pos = hit.Position + hit.Normal * ANKLE_H
-					leg.normal = hit.Normal
+					local n = hit.Normal.Y > 0.55 and hit.Normal or Vector3.yAxis
+					leg.pos = hit.Position + n * ANKLE_H
+					leg.normal = n
 				else
 					leg.pos = leg.stepTo
 				end
@@ -239,12 +254,27 @@ function Loco:_updateSteps(dt: number, speed: number, moveDir: Vector3, airborne
 	for name, leg in pairs(self.legs) do
 		if leg.planted then
 			local other = (name == "Left") and right or left
-			local drift = ((leg.pos - leg.ideal) * Vector3.new(1, 0, 1)).Magnitude
+			-- Where is the foot relative to the hip? While moving, a step is needed when the foot has fallen behind the hip line
+			-- (or drifted sideways); a foot ahead of the hip is exactly where it should be. Standing still uses plain distance.
 			local hip = (self.root.CFrame * CFrame.new(leg.hipLocal)).Position
+			local drift
+			if speed > 1 then
+				local rel = (leg.pos - hip) * Vector3.new(1, 0, 1)
+				local along = rel:Dot(moveDir)
+				local side = (rel - moveDir * along).Magnitude
+				drift = math.max(-along, side * 1.2)
+			else
+				drift = ((leg.ideal - leg.pos) * Vector3.new(1, 0, 1)).Magnitude
+			end
 			local reach = (leg.pos - hip).Magnitude
-			local want = drift > STEP_TRIGGER or reach > (leg.L1 + leg.L2) * 0.97
-			local otherOk = other.planted or other.stepT > 0.65
-			if want and otherOk then
+			local trigger = (speed > 1) and 0.55 or STEP_TRIGGER
+			local reachRatio = reach / (leg.L1 + leg.L2)
+			local want = drift > trigger or reachRatio > 0.9
+			local emergency = reachRatio > 0.95 or drift > 1.9   -- about to over-stretch: step even if the other foot is still up
+			-- walking: the other foot must be planted. running (>10 studs/s): a short overlap is allowed for a bouncy gait.
+			local otherOk = other.planted or (speed > 10 and other.stepT > 0.8) or emergency
+			local rested = (self.time - (leg.lastLanded or -1)) > 0.05 or emergency -- a landed foot stays planted for a moment
+			if want and otherOk and rested then
 				local score = drift + (reach / (leg.L1 + leg.L2)) + ((self.time - (leg.lastLanded or 0)) * 0.05)
 				if not bestScore or score > bestScore then
 					best, bestScore = leg, score
@@ -255,10 +285,23 @@ function Loco:_updateSteps(dt: number, speed: number, moveDir: Vector3, airborne
 	if best then
 		best.planted = false
 		best.stepT = 0
-		best.stepDur = math.clamp(0.30 - speed * 0.006, 0.14, 0.30)
+		best.stepDur = math.clamp(1.2 / math.max(speed, 4), 0.13, 0.26) -- swing no longer than the stance, so one foot is always down when walking
 		best.stepFrom = best.pos
-		local lead = moveDir * math.min(speed, 24) * best.stepDur * 0.55
-		best.stepTo = best.ideal + Vector3.new(lead.X, 0, lead.Z)
+		if speed > 1 then
+			-- land where the hip WILL be when the foot arrives, a little ahead of it, so the leg reaches forward
+			local hipNow = (self.root.CFrame * CFrame.new(best.hipLocal)).Position
+			local ahead = hipNow + moveDir * (speed * best.stepDur + 0.8)
+			local hit = workspace:Raycast(Vector3.new(ahead.X, hipNow.Y + RAY_UP, ahead.Z), Vector3.new(0, -(RAY_UP + RAY_DOWN + 2), 0), self.rayParams)
+			if hit then
+				local n = hit.Normal.Y > 0.55 and hit.Normal or Vector3.yAxis
+				best.stepTo = hit.Position + n * ANKLE_H
+				best.idealNormal = n
+			else
+				best.stepTo = Vector3.new(ahead.X, best.ideal.Y, ahead.Z)
+			end
+		else
+			best.stepTo = best.ideal
+		end
 		best.stepNormal = best.idealNormal
 	end
 end
@@ -314,6 +357,8 @@ function Loco:Update(dt: number)
 	local expectY = cf.Position.Y - (Rig.Joint("HumanoidRootPart").Y - Rig.StandDrop)
 	local heightT = math.clamp((footY - expectY) * 0.5, -0.4, 0.4)
 
+	leanPT = math.clamp(leanPT, -MAX_TILT * 1.15, MAX_TILT * 1.15)
+	leanRT = math.clamp(leanRT, -MAX_TILT * 1.15, MAX_TILT * 1.15)
 	springStep(S.bob, bobT, dt, 4.5, 0.7)
 	springStep(S.sway, swayT, dt, 3.5, 0.7)
 	springStep(S.leanP, leanPT, dt, 3.0, 0.8)
