@@ -113,33 +113,60 @@ function MarketplaceServicePlus:init()
 		ReplicationService.Destroy(`{player.UserId}_Packs`)
 	end)
 
-	MarketplaceService.ProcessReceipt = function (receiptInfo)
+	-- Kept on the module as well so the receipt logic can be tested directly.
+	MarketplaceServicePlus.ProcessReceipt = function (receiptInfo)
 		local player = Players:GetPlayerByUserId(receiptInfo.PlayerId)
 		if not player then return Enum.ProductPurchaseDecision.NotProcessedYet end
+
+		-- Never finish a purchase before the buyer's saved data exists to record it in.
+		if not DataService:IsProfileLoaded(player) then return Enum.ProductPurchaseDecision.NotProcessedYet end
+
+		-- Roblox can deliver the same receipt more than once (retries, a server crash).
+		-- Remember which purchases were already granted so nothing is given twice.
+		local purchaseId = tostring(receiptInfo.PurchaseId)
+		local history = DataService:Get(player, "PurchaseHistory")
+		if type(history) ~= "table" then
+			history = {}
+			DataService:Set(player, "PurchaseHistory", history)
+		end
+		if table.find(history, purchaseId) then return Enum.ProductPurchaseDecision.PurchaseGranted end
 
 		local productID:number = receiptInfo.ProductId
 		local productInfo = GetProductInfo(productID)
 
-		if productInfo.type == "Pass Gift" then
-			local cache = GiftingCache[player.UserId]
-			if cache and cache.Target and cache.PassName == productInfo.name then
-				MarketplaceServicePlus:GivePass(cache.Target, cache.PassName, true, player.UserId, os.time(), true) 
-			end
-		elseif productInfo.type == "Product Gift" then
-			local cache = GiftingCache[player.UserId]
-			if cache and cache.Target and cache.ProductName == productInfo.name then
+		local granted, grantError = pcall(function()
+			if productInfo.type == "Pass Gift" then
+				local cache = GiftingCache[player.UserId]
+				if not (cache and cache.Target and cache.PassName == productInfo.name) then
+					error("gift recipient is unknown (server changed since the gift was started)")
+				end
+				MarketplaceServicePlus:GivePass(cache.Target, cache.PassName, true, player.UserId, os.time(), true)
+			elseif productInfo.type == "Product Gift" then
+				local cache = GiftingCache[player.UserId]
+				if not (cache and cache.Target and cache.ProductName == productInfo.name) then
+					error("gift recipient is unknown (server changed since the gift was started)")
+				end
 				MarketplaceServicePlus:GiveProduct(cache.Target, cache.ProductName, true, player.UserId, os.time(), true)
+			elseif productInfo.type == "Product Purchase" then
+				MarketplaceServicePlus:GiveProduct(player.UserId, productInfo.name, false, nil, os.time(), true)
+			elseif productInfo.type == "Pack Purchase" then
+				MarketplaceServicePlus:GivePack(player, productInfo.name)
 			end
-		elseif productInfo.type == "Product Purchase" then
-			MarketplaceServicePlus:GiveProduct(player.UserId, productInfo.name, false, nil, os.time(), true)
-		elseif productInfo.type == "Pack Purchase" then
-			MarketplaceServicePlus:GivePack(player, productInfo.name)
+		end)
+
+		if not granted then
+			warn(`[Marketplace] could not grant purchase {purchaseId} (product {productID}) to {player.Name}: {grantError}`)
+			return Enum.ProductPurchaseDecision.NotProcessedYet
 		end
+
+		table.insert(history, purchaseId)
+		if #history > 100 then table.remove(history, 1) end
 
 		GiftingCache[player.UserId] = nil
 
 		return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
+	MarketplaceService.ProcessReceipt = MarketplaceServicePlus.ProcessReceipt
 end
 
 function MarketplaceServicePlus:start()
@@ -149,10 +176,35 @@ function MarketplaceServicePlus:start()
 		if not passName then return end
 		MarketplaceServicePlus:GivePass(player.UserId, passName, false, nil, nil, true) 
 	end)
+	-- The client can ask about any user id, and this can hit DataStores / the marketplace, so
+	-- validate the input and allow only a small burst per player (8 checks per 10 seconds).
+	local passChecks = {}
+	Players.PlayerRemoving:Connect(function (leaving)
+		passChecks[leaving] = nil
+	end)
 	Packets.Marketplace.CheckPassOwned.OnServerInvoke = function (player:Player, targetID:number, passName:string)
-		return MarketplaceServicePlus:PlayerOwnsPass(targetID, passName)
+		if typeof(targetID) ~= "number" or targetID ~= math.floor(targetID) or targetID <= 0 then return false end
+		if typeof(passName) ~= "string" or not Passes[passName] then return false end
+
+		local now = os.clock()
+		local window = passChecks[player]
+		if not window or now - window.start > 10 then
+			window = { start = now, count = 0 }
+			passChecks[player] = window
+		end
+		window.count += 1
+		if window.count > 8 then return false end
+
+		local ok, owns = pcall(function()
+			return MarketplaceServicePlus:PlayerOwnsPass(targetID, passName)
+		end)
+		return ok and owns == true
 	end
 	Packets.Marketplace.StartGifting.OnServerEvent:Connect(function (player:Player, targetID:number, giftType:string, giftName:string)
+		if typeof(targetID) ~= "number" or targetID ~= math.floor(targetID) or targetID <= 0 then return end
+		if typeof(giftType) ~= "string" or typeof(giftName) ~= "string" then return end
+		if giftType == "Pass" and not Passes[giftName] then return end
+		if giftType == "Product" and not Products[giftName] then return end
 		local fromAdmin = table.find(General.Admins, player.UserId)
 		if giftType == "Pass" then
 			if fromAdmin then

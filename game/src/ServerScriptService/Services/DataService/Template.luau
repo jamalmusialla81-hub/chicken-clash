@@ -6,6 +6,9 @@ local template = {
 
 	["Packs"] = {},
 
+	-- Robux purchase ids already granted (capped at 100) so a repeated receipt never pays out twice
+	["PurchaseHistory"] = {},
+
 	["Luck"] = {
 		Owned = {1},
 		Equipped = 1,

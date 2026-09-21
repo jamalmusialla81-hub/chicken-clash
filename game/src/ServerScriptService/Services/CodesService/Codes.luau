@@ -1,5 +1,7 @@
 local DataService = require(script.Parent.Parent.DataService)
 
+-- TestCode1, TestCode2 and Hey were removed: they rewarded nothing and only used up
+-- a player's one redemption. Cash100 is kept as it was.
 local Codes = {
 	["Cash100"] = {
 		isValid = function(player: Player)
@@ -10,33 +12,6 @@ local Codes = {
 			DataService:Increment(player, "Cash", 100)
 		end,
 	},
-	["TestCode1"] = {
-		isValid = function(player: Player)
-			return true
-		end,
-		numberOfUses = 999,
-		reward = function(player: Player)
-			print("Rewarding Player")
-		end,
-	},
-
-	["TestCode2"] = {
-		isValid = function(player: Player)
-			return true
-		end,
-		numberOfUses = -1,
-		reward = function(player: Player)
-			print("Rewarding Player")
-		end,
-	},
-	
-	["Hey"] = {
-		isValid = function() return true end,
-		numberOfUses = -1,
-		reward = function ()
-			
-		end,
-	}
 } :: {
 	[string]: {
 		isValid: (Player) -> boolean,
