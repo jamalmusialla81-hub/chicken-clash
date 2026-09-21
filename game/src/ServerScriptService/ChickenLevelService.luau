@@ -144,7 +144,7 @@ function ChickenLevelService.TryUpgrade(player, uniqueChickenName, chickenName)
 		return false, "Not enough cash"
 	end
 
-	cash.Value -= cost
+	DataService:Increment(player, "Cash", -cost)
 
 	local newLevel = currentLevel + 1
 	setLevel(player, uniqueChickenName, newLevel)

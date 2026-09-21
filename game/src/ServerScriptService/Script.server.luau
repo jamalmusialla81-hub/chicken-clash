@@ -1,5 +1,6 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
+local DataService = require(game:GetService("ServerScriptService"):WaitForChild("Services"):WaitForChild("DataService"))
 local ChickenEggConfig = require(ReplicatedStorage:WaitForChild("ChickenEggConfig"))
 local MutationConfig = require(ReplicatedStorage:WaitForChild("MutationConfig"))
 
@@ -113,7 +114,7 @@ sellEvent.OnServerEvent:Connect(function(player)
 			payout += math.floor(price * multiplier)
 		end
 		eggBox:Destroy()
-		cash.Value += payout
+		DataService:Increment(player, "Cash", payout)
 		resultEvent:FireClient(player, payout, eggCount, "SOLD")
 		print("[EggboxSelling]", player.Name, "sold", eggCount, "eggs for $" .. payout)
 	end)

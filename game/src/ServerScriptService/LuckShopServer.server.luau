@@ -387,7 +387,7 @@ purchaseRemote.OnServerEvent:Connect(function(
 	-- TAKE CASH
 	--==================================================
 
-	cash.Value -= price
+	DataService:Increment(player, "Cash", -price)
 
 	print(
 		"[LuckShopServer] Cash after:",

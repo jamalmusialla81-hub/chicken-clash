@@ -860,33 +860,22 @@ sellChicken.OnServerInvoke = function(player, chickenName)
 
 	local sellPrice = getSellPrice(configEntry)
 
+	-- Cash is owned by LeaderstatsService (backed by DataService). Never create a
+	-- substitute value here: it would not be saved. Checked BEFORE removing the chicken
+	-- so a sale can never take the chicken and pay nothing.
+	local leaderstats = player:FindFirstChild("leaderstats")
+	local coins = leaderstats and leaderstats:FindFirstChild("Cash")
+
+	if not coins then
+		return false, "Your data is still loading"
+	end
+
 	unequipIfEquipped(player, chickenName)
 
 	chickenValue:Destroy()
 	saveChickenCounts(player)
 
-	local leaderstats = player:FindFirstChild("leaderstats")
-
-	local coins =
-		leaderstats
-		and (
-			leaderstats:FindFirstChild("Coins")
-			or leaderstats:FindFirstChild("Cash")
-		)
-
-	if not coins then
-
-		leaderstats = leaderstats or Instance.new("Folder")
-		leaderstats.Name = "leaderstats"
-		leaderstats.Parent = player
-
-		coins = Instance.new("IntValue")
-		coins.Name = "Coins"
-		coins.Value = 0
-		coins.Parent = leaderstats
-	end
-
-	coins.Value += sellPrice
+	DataService:Increment(player, "Cash", sellPrice)
 
 	return true, sellPrice
 end
@@ -904,25 +893,13 @@ sellAll.OnServerInvoke = function(player)
 		return false, 0, 0
 	end
 
+	-- Cash is owned by LeaderstatsService (backed by DataService). Never create a
+	-- substitute value here: it would not be saved.
 	local leaderstats = player:FindFirstChild("leaderstats")
-
-	local coins =
-		leaderstats
-		and (
-			leaderstats:FindFirstChild("Coins")
-			or leaderstats:FindFirstChild("Cash")
-		)
+	local coins = leaderstats and leaderstats:FindFirstChild("Cash")
 
 	if not coins then
-
-		leaderstats = leaderstats or Instance.new("Folder")
-		leaderstats.Name = "leaderstats"
-		leaderstats.Parent = player
-
-		coins = Instance.new("IntValue")
-		coins.Name = "Coins"
-		coins.Value = 0
-		coins.Parent = leaderstats
+		return false, 0, 0
 	end
 
 	local total = 0
@@ -973,7 +950,7 @@ sellAll.OnServerInvoke = function(player)
 		)
 	end
 
-	coins.Value += total
+	DataService:Increment(player, "Cash", total)
 	saveChickenCounts(player)
 
 	return true, total, sold

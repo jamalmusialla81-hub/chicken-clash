@@ -38,7 +38,18 @@ local template = {
 
 	["RedeemedCodes"] = {},
 
-	["Cash"] = 0,
+	-- 1000 matches the starting cash every player already effectively had (the old
+	-- SkillTreeServer.DefaultCash). CashMigrated must default to false: Reconcile copies
+	-- missing keys into existing profiles, and LeaderstatsService flips it to true once.
+	["Cash"] = 1000,
+	["CashMigrated"] = false,
+
+	-- Skill tree progression (was its own DataStore, "SkillTreeProgression_v1").
+	-- Migrated is set once SkillTreeServer has copied any old data across.
+	["SkillTree"] = {
+		Owned = {},
+		Migrated = false,
+	},
 
 	["LastSessionTime"] = 0,
 

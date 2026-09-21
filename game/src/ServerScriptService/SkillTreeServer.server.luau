@@ -1,54 +1,34 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 local DataStoreService = game:GetService("DataStoreService")
+
+local DataService = require(ServerScriptService.Services.DataService)
+local GlobalSignals = require(ServerScriptService.Utils.GlobalSignals)
 
 local config = require(ReplicatedStorage:WaitForChild("SkillTreeConfig"))
 local remotes = ReplicatedStorage:WaitForChild("SkillTreeRemotes")
 local requestState = remotes:WaitForChild("RequestState")
 local purchaseSkill = remotes:WaitForChild("PurchaseSkill")
 local stateUpdate = remotes:WaitForChild("StateUpdate")
-local skillStore = DataStoreService:GetDataStore("SkillTreeProgression_v1")
+
+-- Progression now lives in the player's DataService profile (Data.SkillTree.Owned) and
+-- cash is the single leaderstats.Cash owned by LeaderstatsService. This old store is only
+-- READ, once per player, to copy previous progression across. It is never written or deleted.
+local legacySkillStore = DataStoreService:GetDataStore("SkillTreeProgression_v1")
 
 local nodeById = {}
 for _, node in ipairs(config.Nodes) do
 	nodeById[node.id] = node
 end
 
+-- player -> the profile's own SkillTree.Owned table, so changes are saved with the profile
 local ownedByPlayer = {}
 local loadingByPlayer = {}
-local currencySyncing = {}
 
-local function getCurrency(player)
+local function getCash(player)
 	local leaderstats = player:FindFirstChild("leaderstats")
-	if not leaderstats then
-		leaderstats = Instance.new("Folder")
-		leaderstats.Name = "leaderstats"
-		leaderstats.Parent = player
-	end
-	local cash = leaderstats:FindFirstChild("Cash") or leaderstats:FindFirstChild("Coins")
-	if not cash then
-		cash = Instance.new("IntValue")
-		cash.Name = "Cash"
-		cash.Value = config.DefaultCash
-		cash.Parent = leaderstats
-	end
-	if cash.Name == "Coins" then
-		local alias = leaderstats:FindFirstChild("Cash")
-		if not alias then
-			alias = Instance.new("IntValue")
-			alias.Name = "Cash"
-			alias.Value = cash.Value
-			alias.Parent = leaderstats
-		end
-		if not currencySyncing[player] then
-			currencySyncing[player] = true
-			cash:GetPropertyChangedSignal("Value"):Connect(function() if alias.Value ~= cash.Value then alias.Value = cash.Value end end)
-			alias:GetPropertyChangedSignal("Value"):Connect(function() if cash.Value ~= alias.Value then cash.Value = alias.Value end end)
-			currencySyncing[player] = nil
-		end
-		cash = alias
-	end
-	return cash
+	return leaderstats and leaderstats:FindFirstChild("Cash")
 end
 
 local function copyOwned(owned)
@@ -62,36 +42,47 @@ local function copyOwned(owned)
 end
 
 local function sendState(player, message, success)
-	stateUpdate:FireClient(player, copyOwned(ownedByPlayer[player]), message, success, getCurrency(player).Value)
+	local cash = getCash(player)
+	stateUpdate:FireClient(player, copyOwned(ownedByPlayer[player]), message, success, cash and cash.Value or 0)
 end
 
-local function loadPlayer(player)
+local function loadPlayer(player, profileData)
+	if ownedByPlayer[player] or loadingByPlayer[player] then return end
 	loadingByPlayer[player] = true
-	local owned = {}
-	local success, data = pcall(function()
-		return skillStore:GetAsync("Player_" .. player.UserId)
-	end)
-	if success and type(data) == "table" then
-		owned = copyOwned(data.owned)
-	elseif not success then
-		warn("[SkillTreeServer] Could not load data for " .. player.Name)
+
+	local skillTree = profileData.SkillTree
+	if type(skillTree) ~= "table" then
+		skillTree = { Owned = {}, Migrated = false }
+		profileData.SkillTree = skillTree
 	end
-	ownedByPlayer[player] = owned
+	if type(skillTree.Owned) ~= "table" then
+		skillTree.Owned = {}
+	end
+
+	if not skillTree.Migrated then
+		local success, data = pcall(function()
+			return legacySkillStore:GetAsync("Player_" .. player.UserId)
+		end)
+		if success then
+			if type(data) == "table" then
+				for id in pairs(copyOwned(data.owned)) do
+					skillTree.Owned[id] = true
+				end
+			end
+			skillTree.Migrated = true
+		else
+			-- Leave Migrated false so it is retried next time (e.g. Studio without API access).
+			warn("[SkillTreeServer] Could not read legacy skill data for " .. player.Name)
+		end
+	end
+
+	if player.Parent ~= Players then
+		loadingByPlayer[player] = nil
+		return
+	end
+	ownedByPlayer[player] = skillTree.Owned
 	loadingByPlayer[player] = nil
 	sendState(player, "", true)
-end
-
-local function savePlayer(player)
-	local owned = ownedByPlayer[player]
-	if not owned then return end
-	local success, err = pcall(function()
-		skillStore:UpdateAsync("Player_" .. player.UserId, function()
-			return { owned = copyOwned(owned) }
-		end)
-	end)
-	if not success then
-		warn("[SkillTreeServer] Could not save data for " .. player.Name .. ": " .. tostring(err))
-	end
 end
 
 local function canPurchase(player, id)
@@ -104,26 +95,26 @@ local function canPurchase(player, id)
 	if owned[id] then return false, "You already own this skill." end
 	if node.prerequisite and not owned[node.prerequisite] then return false, "Unlock the previous skill first." end
 	if not node.prerequisite and not node.entryPoint then return false, "This skill has no available entry path." end
-	local cash = getCurrency(player)
+	local cash = getCash(player)
+	if not cash then return false, "Your data is still loading." end
 	if cash.Value < node.cost then return false, "You need " .. tostring(node.cost) .. " Cash." end
 	return true, node, cash
 end
 
-Players.PlayerAdded:Connect(function(player)
-	getCurrency(player)
-	task.spawn(loadPlayer, player)
+GlobalSignals.DataService.PlayerProfileLoaded:Connect(function(player, profileData)
+	task.spawn(loadPlayer, player, profileData)
 end)
+
+-- Cover a profile that finished loading before this script connected.
+for _, player in ipairs(Players:GetPlayers()) do
+	if DataService:IsProfileLoaded(player) then
+		task.spawn(loadPlayer, player, DataService:GetData(player))
+	end
+end
 
 Players.PlayerRemoving:Connect(function(player)
-	savePlayer(player)
 	ownedByPlayer[player] = nil
 	loadingByPlayer[player] = nil
-end)
-
-game:BindToClose(function()
-	for _, player in ipairs(Players:GetPlayers()) do
-		savePlayer(player)
-	end
 end)
 
 requestState.OnServerEvent:Connect(function(player)
@@ -136,8 +127,7 @@ purchaseSkill.OnServerEvent:Connect(function(player, id)
 		sendState(player, nodeOrMessage, false)
 		return
 	end
-	cash.Value -= nodeOrMessage.cost
+	DataService:Increment(player, "Cash", -nodeOrMessage.cost)
 	ownedByPlayer[player][nodeOrMessage.id] = true
 	sendState(player, "Unlocked " .. nodeOrMessage.title .. "!", true)
-	task.spawn(savePlayer, player)
 end)
