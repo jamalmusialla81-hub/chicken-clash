@@ -1,0 +1,342 @@
+{
+ "combat_tris": {
+  "Beak": 132,
+  "Body": 1476,
+  "Cape": 968,
+  "Chest": 1468,
+  "Comb": 1388,
+  "Halo": 336,
+  "Head": 2084,
+  "LeftFoot": 476,
+  "LeftLowerLeg": 104,
+  "LeftUpperLeg": 420,
+  "LeftWingLower": 1460,
+  "LeftWingUpper": 764,
+  "Neck": 68,
+  "RightFoot": 476,
+  "RightLowerLeg": 104,
+  "RightUpperLeg": 420,
+  "RightWingLower": 1460,
+  "RightWingUpper": 764,
+  "Tail": 1360
+ },
+ "combat_tris_total": 15728,
+ "combat_meshparts": 19,
+ "preview_tris": 6604,
+ "preview_meshparts": 1,
+ "atlas": "512x512 albedo only (palette gradients + painted eye + emblem); no normal/roughness/metalness maps",
+ "bones": 29,
+ "rig": [
+  {
+   "name": "HumanoidRootPart",
+   "parent": null,
+   "kind": "root",
+   "joint": [
+    -0.15,
+    1.9,
+    0
+   ]
+  },
+  {
+   "name": "Body",
+   "parent": "HumanoidRootPart",
+   "kind": "part",
+   "joint": [
+    -0.15,
+    2.75,
+    0
+   ]
+  },
+  {
+   "name": "Chest",
+   "parent": "Body",
+   "kind": "part",
+   "joint": [
+    0.5,
+    3.4,
+    0
+   ]
+  },
+  {
+   "name": "Neck",
+   "parent": "Chest",
+   "kind": "part",
+   "joint": [
+    0.9,
+    3.9,
+    0
+   ]
+  },
+  {
+   "name": "Head",
+   "parent": "Neck",
+   "kind": "part",
+   "joint": [
+    1.2,
+    4.4,
+    0
+   ]
+  },
+  {
+   "name": "Beak",
+   "parent": "Head",
+   "kind": "part",
+   "joint": [
+    2.4,
+    4.3,
+    0
+   ]
+  },
+  {
+   "name": "Comb",
+   "parent": "Head",
+   "kind": "part",
+   "joint": [
+    1.25,
+    5.7,
+    0
+   ]
+  },
+  {
+   "name": "LeftWingUpper",
+   "parent": "Chest",
+   "kind": "part",
+   "joint": [
+    -0.35,
+    3.25,
+    -1.55
+   ]
+  },
+  {
+   "name": "LeftWingLower",
+   "parent": "LeftWingUpper",
+   "kind": "part",
+   "joint": [
+    -0.55,
+    2.95,
+    -2.15
+   ]
+  },
+  {
+   "name": "RightWingUpper",
+   "parent": "Chest",
+   "kind": "part",
+   "joint": [
+    -0.35,
+    3.25,
+    1.55
+   ]
+  },
+  {
+   "name": "RightWingLower",
+   "parent": "RightWingUpper",
+   "kind": "part",
+   "joint": [
+    -0.55,
+    2.95,
+    2.15
+   ]
+  },
+  {
+   "name": "Tail",
+   "parent": "Body",
+   "kind": "part",
+   "joint": [
+    -1.45,
+    3.05,
+    0
+   ]
+  },
+  {
+   "name": "LeftUpperLeg",
+   "parent": "Body",
+   "kind": "part",
+   "joint": [
+    0.05,
+    1.9,
+    -0.85
+   ]
+  },
+  {
+   "name": "LeftLowerLeg",
+   "parent": "LeftUpperLeg",
+   "kind": "part",
+   "joint": [
+    0.3,
+    1.2,
+    -0.85
+   ]
+  },
+  {
+   "name": "LeftFoot",
+   "parent": "LeftLowerLeg",
+   "kind": "part",
+   "joint": [
+    0.55,
+    0.45,
+    -0.85
+   ]
+  },
+  {
+   "name": "RightUpperLeg",
+   "parent": "Body",
+   "kind": "part",
+   "joint": [
+    0.05,
+    1.9,
+    0.85
+   ]
+  },
+  {
+   "name": "RightLowerLeg",
+   "parent": "RightUpperLeg",
+   "kind": "part",
+   "joint": [
+    0.3,
+    1.2,
+    0.85
+   ]
+  },
+  {
+   "name": "RightFoot",
+   "parent": "RightLowerLeg",
+   "kind": "part",
+   "joint": [
+    0.55,
+    0.45,
+    0.85
+   ]
+  },
+  {
+   "name": "Cape",
+   "parent": "Chest",
+   "kind": "part",
+   "joint": [
+    -0.4,
+    4.0,
+    0
+   ]
+  },
+  {
+   "name": "Halo",
+   "parent": "Head",
+   "kind": "part",
+   "joint": [
+    1.25,
+    7.4,
+    0
+   ]
+  },
+  {
+   "name": "AuraRoot",
+   "parent": "HumanoidRootPart",
+   "kind": "attach",
+   "joint": [
+    -0.15,
+    0.05,
+    0
+   ]
+  },
+  {
+   "name": "FootSigil",
+   "parent": "HumanoidRootPart",
+   "kind": "attach",
+   "joint": [
+    -0.0,
+    0.02,
+    0
+   ]
+  },
+  {
+   "name": "LeftWingTrail",
+   "parent": "LeftWingLower",
+   "kind": "attach",
+   "joint": [
+    -2.3,
+    1.5,
+    -2.6
+   ]
+  },
+  {
+   "name": "RightWingTrail",
+   "parent": "RightWingLower",
+   "kind": "attach",
+   "joint": [
+    -2.3,
+    1.5,
+    2.6
+   ]
+  },
+  {
+   "name": "Weapon",
+   "parent": "LeftWingLower",
+   "kind": "attach",
+   "joint": [
+    0.9,
+    2.6,
+    -2.3
+   ]
+  },
+  {
+   "name": "Ultimate",
+   "parent": "HumanoidRootPart",
+   "kind": "attach",
+   "joint": [
+    -0.15,
+    8.4,
+    0
+   ]
+  },
+  {
+   "name": "CrownEffect",
+   "parent": "Comb",
+   "kind": "attach",
+   "joint": [
+    1.25,
+    7.2,
+    0
+   ]
+  },
+  {
+   "name": "BackEffect",
+   "parent": "Chest",
+   "kind": "attach",
+   "joint": [
+    -1.6,
+    3.5,
+    0
+   ]
+  },
+  {
+   "name": "FinisherTarget",
+   "parent": "HumanoidRootPart",
+   "kind": "attach",
+   "joint": [
+    4.5,
+    2.8,
+    0
+   ]
+  }
+ ],
+ "part_to_bone": {
+  "Body": "Body",
+  "Chest": "Chest",
+  "Neck": "Neck",
+  "Head": "Head",
+  "Beak": "Beak",
+  "Comb": "Comb",
+  "Tail": "Tail",
+  "Cape": "Cape",
+  "Halo": "Halo",
+  "WingUpperL": "LeftWingUpper",
+  "WingLowerL": "LeftWingLower",
+  "WingUpperR": "RightWingUpper",
+  "WingLowerR": "RightWingLower",
+  "UpperLegL": "LeftUpperLeg",
+  "LowerLegL": "LeftLowerLeg",
+  "FootL": "LeftFoot",
+  "UpperLegR": "RightUpperLeg",
+  "LowerLegR": "RightLowerLeg",
+  "FootR": "RightFoot"
+ }
+}
