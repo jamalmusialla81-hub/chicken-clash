@@ -1,0 +1,17 @@
+{
+  "className": "Sky",
+  "properties": {
+    "StarCount": 0.0,
+    "SkyboxRightContent": "rbxassetid://72692159778760",
+    "SkyboxFrontContent": "rbxassetid://84090899772267",
+    "SkyboxLeftContent": "rbxassetid://104104857422044",
+    "SourceAssetId": 9776643246.0,
+    "SkyboxDownContent": "rbxassetid://118031376732287",
+    "CelestialBodiesShown": false,
+    "SkyboxUpContent": "rbxassetid://119770004735874",
+    "SkyboxBackContent": "rbxassetid://79416076399907"
+  },
+  "attributes": {
+    "_lemonadeUniqueId": "T2EQGrlDT2EQ"
+  }
+}

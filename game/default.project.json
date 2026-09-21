@@ -1,0 +1,89 @@
+{
+  "name": "robloxgame",
+  "tree": {
+    "$className": "DataModel",
+    "Lighting": {
+      "$properties": {
+        "Ambient": [
+          0.5411764979362488,
+          0.5411764979362488,
+          0.5411764979362488
+        ],
+        "Brightness": 2.0,
+        "FogColor": [
+          0.7529412508010864,
+          0.7529412508010864,
+          0.7529412508010864
+        ],
+        "GlobalShadows": true,
+        "OutdoorAmbient": [
+          0.501960813999176,
+          0.501960813999176,
+          0.501960813999176
+        ],
+        "Outlines": false,
+        "PrioritizeLightingQuality": true,
+        "ShadowSoftness": 0.20000000298023224,
+        "Technology": "ShadowMap"
+      },
+      "$attributes": {
+        "_lemonadeUniqueId": "lit"
+      },
+      "$path": "src/Lighting"
+    },
+    "ReplicatedFirst": {
+      "$attributes": {
+        "_lemonadeUniqueId": "rf1"
+      },
+      "$path": "src/ReplicatedFirst"
+    },
+    "ReplicatedStorage": {
+      "$attributes": {
+        "_lemonadeUniqueId": "rs1"
+      },
+      "$path": "src/ReplicatedStorage"
+    },
+    "ServerScriptService": {
+      "$attributes": {
+        "_lemonadeUniqueId": "sss"
+      },
+      "$path": "src/ServerScriptService"
+    },
+    "ServerStorage": {
+      "$attributes": {
+        "_lemonadeUniqueId": "ss1"
+      },
+      "$path": "src/ServerStorage"
+    },
+    "StarterGui": {
+      "$attributes": {
+        "_lemonadeUniqueId": "sg1"
+      },
+      "$path": "src/StarterGui"
+    },
+    "StarterPack": {
+      "$attributes": {
+        "_lemonadeUniqueId": "spk"
+      },
+      "$path": "src/StarterPack"
+    },
+    "StarterPlayer": {
+      "$properties": {
+        "AvatarJointUpgrade": "Enabled",
+        "CameraMaxZoomDistance": 128.0,
+        "CharacterBreakJointsOnDeath": false,
+        "CharacterWalkSpeed": 35.0
+      },
+      "$attributes": {
+        "_lemonadeUniqueId": "sp1"
+      },
+      "$path": "src/StarterPlayer"
+    },
+    "Teams": {
+      "$attributes": {
+        "_lemonadeUniqueId": "tms"
+      },
+      "$path": "src/Teams"
+    }
+  }
+}

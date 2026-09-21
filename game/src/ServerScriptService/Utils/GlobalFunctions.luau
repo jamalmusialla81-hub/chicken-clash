@@ -1,0 +1,3 @@
+local GlobalFunctions = {}
+
+return GlobalFunctions

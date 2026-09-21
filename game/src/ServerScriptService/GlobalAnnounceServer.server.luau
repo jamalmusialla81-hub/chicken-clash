@@ -1,0 +1,2 @@
+-- Announce jest obsługiwany przez GlobalServer.
+-- Ten skrypt pozostaje pusty aby nie duplikować logiki.

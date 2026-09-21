@@ -1,0 +1,10 @@
+{
+  "className": "BloomEffect",
+  "properties": {
+    "Threshold": 3.0,
+    "Size": 25.0
+  },
+  "attributes": {
+    "_lemonadeUniqueId": "2lG9wmPN2lG9"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "className": "Sky",
+  "properties": {
+    "StarCount": 0.0,
+    "SkyboxRightContent": "http://www.roblox.com/asset/?id=159454300",
+    "SkyboxFrontContent": "http://www.roblox.com/asset/?id=159454293",
+    "SkyboxLeftContent": "http://www.roblox.com/asset/?id=159454286",
+    "SourceAssetId": 18618101697.0,
+    "SkyboxDownContent": "http://www.roblox.com/asset/?id=159454296",
+    "CelestialBodiesShown": false,
+    "SkyboxUpContent": "http://www.roblox.com/asset/?id=159454288",
+    "SkyboxBackContent": "http://www.roblox.com/asset/?id=159454299"
+  },
+  "attributes": {
+    "_lemonadeUniqueId": "T34jXaOCT34j"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "properties": {
+    "SkyboxDownContent": "rbxassetid://1233158838",
+    "SkyboxRightContent": "rbxassetid://1233157995",
+    "SourceAssetId": 10610570551.0,
+    "SunTextureContent": "",
+    "MoonTextureContent": "",
+    "SkyboxFrontContent": "rbxassetid://1233157105",
+    "SkyboxLeftContent": "rbxassetid://1233157640",
+    "SkyboxUpContent": "rbxassetid://1233159158",
+    "SkyboxBackContent": "rbxassetid://1233158420"
+  },
+  "attributes": {
+    "_lemonadeUniqueId": "vbneBayIvbne"
+  },
+  "className": "Sky"
+}
