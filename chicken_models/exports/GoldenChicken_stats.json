@@ -1,0 +1,122 @@
+{
+ "Beak": {
+  "tris": 896,
+  "unique_verts": 452,
+  "bone": "Beak",
+  "tris_before_decimate": 896
+ },
+ "Body": {
+  "tris": 6546,
+  "unique_verts": 4007,
+  "bone": "Body",
+  "tris_before_decimate": 11904
+ },
+ "Cape": {
+  "tris": 2620,
+  "unique_verts": 1312,
+  "bone": "Cape",
+  "tris_before_decimate": 6240
+ },
+ "Chest": {
+  "tris": 3014,
+  "unique_verts": 1515,
+  "bone": "Chest",
+  "tris_before_decimate": 4864
+ },
+ "Eyes": {
+  "tris": 660,
+  "unique_verts": 334,
+  "bone": "Head",
+  "tris_before_decimate": 1320
+ },
+ "FootL": {
+  "tris": 2012,
+  "unique_verts": 1020,
+  "bone": "FootL",
+  "tris_before_decimate": 3248
+ },
+ "FootR": {
+  "tris": 2012,
+  "unique_verts": 1020,
+  "bone": "FootR",
+  "tris_before_decimate": 3248
+ },
+ "Halo": {
+  "tris": 1074,
+  "unique_verts": 558,
+  "bone": "Halo",
+  "tris_before_decimate": 3584
+ },
+ "HaloRune": {
+  "tris": 402,
+  "unique_verts": 213,
+  "bone": "Halo",
+  "tris_before_decimate": 672
+ },
+ "Head": {
+  "tris": 6278,
+  "unique_verts": 3169,
+  "bone": "Head",
+  "tris_before_decimate": 13080
+ },
+ "LegL": {
+  "tris": 1876,
+  "unique_verts": 946,
+  "bone": "LegL",
+  "tris_before_decimate": 3752
+ },
+ "LegR": {
+  "tris": 1876,
+  "unique_verts": 946,
+  "bone": "LegR",
+  "tris_before_decimate": 3752
+ },
+ "Neck": {
+  "tris": 1548,
+  "unique_verts": 776,
+  "bone": "Neck",
+  "tris_before_decimate": 3440
+ },
+ "Tail": {
+  "tris": 2952,
+  "unique_verts": 1610,
+  "bone": "Tail",
+  "tris_before_decimate": 2952
+ },
+ "WingLowerL": {
+  "tris": 3056,
+  "unique_verts": 1805,
+  "bone": "WingLowerL",
+  "tris_before_decimate": 3056
+ },
+ "WingLowerR": {
+  "tris": 3056,
+  "unique_verts": 1805,
+  "bone": "WingLowerR",
+  "tris_before_decimate": 3056
+ },
+ "WingUpperL": {
+  "tris": 2852,
+  "unique_verts": 1434,
+  "bone": "WingUpperL",
+  "tris_before_decimate": 9512
+ },
+ "WingUpperR": {
+  "tris": 2852,
+  "unique_verts": 1434,
+  "bone": "WingUpperR",
+  "tris_before_decimate": 9512
+ },
+ "PREVIEW_MAIN": {
+  "tris": 14245,
+  "unique_verts": 8378
+ },
+ "_summary": {
+  "combat_tris_total": 45582,
+  "combat_meshparts": 18,
+  "preview_tris": 15307,
+  "atlas": "1024x1024 albedo/normal/roughness/metalness (+ORM packed), 512 copies for Studio",
+  "eyes_texture": "256x256",
+  "bones": 24
+ }
+}
