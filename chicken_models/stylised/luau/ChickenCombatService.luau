@@ -25,6 +25,26 @@ local ChickenStateService = require(script.Parent:WaitForChild("ChickenStateServ
 local ChickenCombatService = {}
 ChickenCombatService.HitEvent = Instance.new("BindableEvent") -- (attacker: Model, victim: Model, damage: number, attackName: string)
 
+-- fires to the attacking player only, so their camera can play a stronger CONFIRMED-hit shake distinct
+-- from the lighter swing recoil that plays regardless of whether the swing actually connected.
+local hitConfirmedRemote = ReplicatedStorage:FindFirstChild("ChickenHitConfirmed")
+if not hitConfirmedRemote then
+	hitConfirmedRemote = Instance.new("RemoteEvent")
+	hitConfirmedRemote.Name = "ChickenHitConfirmed"
+	hitConfirmedRemote.Parent = ReplicatedStorage
+end
+local Players = game:GetService("Players")
+local function firePlayerForModel(model: Model, ...)
+	local ownerId = model:GetAttribute("OwnerUserId")
+	if not ownerId then
+		return
+	end
+	local plr = Players:GetPlayerByUserId(ownerId)
+	if plr then
+		hitConfirmedRemote:FireClient(plr, ...)
+	end
+end
+
 local ATTACK_CHAIN = { "Attack1", "Attack2", "Attack3" }
 local ATTACK_CATALOG = { Attack1 = "M1_1", Attack2 = "M1_2", Attack3 = "M1_3" }
 local ATTACK_DAMAGE = { Attack1 = 8, Attack2 = 10, Attack3 = 18 }
@@ -95,7 +115,10 @@ local function runActiveWindow(model: Model, actionName: string, catalogName: st
 		for target in pairs(queryHitbox(model)) do
 			if not hitThisSwing[target] then
 				hitThisSwing[target] = true
-				ChickenCombatService.HitEvent:Fire(model, target, ATTACK_DAMAGE[actionName] or 0, actionName)
+				local dmg = ATTACK_DAMAGE[actionName] or 0
+				ChickenCombatService.HitEvent:Fire(model, target, dmg, actionName)
+				firePlayerForModel(model, "Dealt", actionName, dmg)
+				firePlayerForModel(target, "Taken", actionName, dmg)
 			end
 		end
 	end)

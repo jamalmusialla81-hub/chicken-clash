@@ -8,13 +8,20 @@ local ALLOWED = {
 	Attack1 = true, Attack2 = true, Attack3 = true, Entrance = true, Victory = true,
 }
 
-function ChickenStateService.Activate(model: Model)
+-- owner is optional so existing callers with no player concept keep working; pass it whenever a real
+-- player is entering combat with this chicken - ChickenCombatCameraController and ChickenCombatService's
+-- hit-confirmation feedback both key off this same "OwnerUserId" attribute to find the right client.
+function ChickenStateService.Activate(model: Model, owner: Player?)
 	CollectionService:AddTag(model, "CombatChicken")
+	if owner then
+		model:SetAttribute("OwnerUserId", owner.UserId)
+	end
 end
 
 function ChickenStateService.Deactivate(model: Model)
 	CollectionService:RemoveTag(model, "CombatChicken")
 	model:SetAttribute("Action", nil)
+	model:SetAttribute("OwnerUserId", nil)
 end
 
 function ChickenStateService.SetAction(model: Model, action: string?)
