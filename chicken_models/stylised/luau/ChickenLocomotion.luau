@@ -310,6 +310,11 @@ function Loco:Update(dt: number)
 	if self.destroyed or not self.root.Parent then
 		return
 	end
+	if self.enabled == false then
+		-- an authored movement-priority AnimationTrack owns the legs right now (ChickenAnimator toggles
+		-- this off rather than letting IK and a real track fight over the same Motor6Ds).
+		return
+	end
 	dt = math.min(dt, 0.1)
 	self.time += dt
 	local cf = self.root.CFrame

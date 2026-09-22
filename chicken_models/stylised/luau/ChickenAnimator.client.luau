@@ -1,25 +1,122 @@
---[[ ChickenAnimator (client). Only ACTIVE combat chickens (tagged "CombatChicken") get procedural animation - stored /
-	preview chickens never run IK. Everything is torn down when the model leaves the world (no leaked connections).
-	The server decides what a chicken is DOING (attribute "Action"); the client only renders it.
+--[[ ChickenAnimator (client). Only ACTIVE combat chickens (tagged "CombatChicken") get animated - stored /
+	preview chickens never run IK or the state machine. The server decides what a chicken is DOING
+	(attribute "Action"); the client only renders it.
 
-	FIX (found during the Golden Chicken final benchmark): CollectionService tag replication and instance-hierarchy
-	replication are not ordered relative to each other. A model tagged in the same server frame it is parented could
-	have GetInstanceAddedSignal fire on the client BEFORE model:IsDescendantOf(workspace) was true yet, so the old
-	single-shot check silently and permanently skipped it (no crest, no IK, joints frozen at identity - confirmed
-	reproduced in a fresh playtest with the production script, not a stale-script artifact). attach() now retries for
-	up to ~2 seconds instead of giving up after one synchronous check. ]]
+	State-driven controller: each Action maps to an entry in STATES below, which prefers a real, uploaded
+	Moon-Animator-authored AnimationTrack (via GoldenChickenAnimationCatalog) and falls back to the
+	original code-driven ChickenPoses library for any animation Jakob hasn't uploaded yet. This means the
+	game keeps working exactly as before while animations are uploaded one at a time - nothing has to
+	switch over all at once. Once every catalog entry is uploaded, the fallback branch is simply dead code
+	and can be deleted; until then it is the real production behaviour for whichever states aren't ready.
+
+	Movement priority tracks (Walk/Run) are full-body, including legs, to match the authored pose
+	language - so while one of them is actually playing (real asset only), ChickenLocomotion's procedural
+	leg IK is switched off for that chicken (loco.enabled = false) rather than fighting the track for the
+	same Motor6Ds. IK resumes the instant the track stops. Non-movement states never touch this flag.
+
+	FIX (found during the Golden Chicken final benchmark): CollectionService tag replication and instance-
+	hierarchy replication are not ordered relative to each other. A model tagged in the same server frame
+	it is parented could have GetInstanceAddedSignal fire on the client BEFORE model:IsDescendantOf(workspace)
+	was true yet, so the old single-shot check silently and permanently skipped it (no crest, no IK, joints
+	frozen at identity). attach() retries for up to ~2 seconds instead of giving up after one synchronous
+	check. This fix is unrelated to the state machine above and must be preserved as-is. ]]
+
 local CollectionService = game:GetService("CollectionService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ContentProvider = game:GetService("ContentProvider")
 
 local folder = ReplicatedStorage:WaitForChild("ChickenClash")
 local Loco = require(folder:WaitForChild("ChickenLocomotion"))
 local Idle = require(folder:WaitForChild("ChickenIdle"))
 local Poses = require(folder:WaitForChild("ChickenPoses"))
 local Aura = require(folder:WaitForChild("ChickenAura"))
+local Catalog = require(folder:WaitForChild("GoldenChickenAnimationCatalog"))
+
+-- Action attribute value -> playback spec. `fallbackPose` names a ChickenPoses.Library entry to use
+-- while the real asset is still "PENDING_UPLOAD"; nil means "no procedural equivalent exists" (the state
+-- simply does nothing until uploaded - true for every state the brief introduced that didn't exist
+-- before: JumpStart/Fall/Land/Dash/M1_2/M1_3).
+local STATES = {
+	Idle      = { catalog = "Idle",      fallbackPose = nil,          blendIn = 0.25, blendOut = 0.25, movementPriority = false },
+	Walk      = { catalog = "Walk",      fallbackPose = nil,          blendIn = 0.20, blendOut = 0.20, movementPriority = true },
+	Run       = { catalog = "Run",       fallbackPose = nil,          blendIn = 0.12, blendOut = 0.15, movementPriority = true },
+	JumpStart = { catalog = "JumpStart", fallbackPose = nil,          blendIn = 0.05, blendOut = 0.10, movementPriority = false },
+	Fall      = { catalog = "Fall",      fallbackPose = nil,          blendIn = 0.15, blendOut = 0.15, movementPriority = false },
+	Land      = { catalog = "Land",      fallbackPose = nil,          blendIn = 0.02, blendOut = 0.15, movementPriority = false },
+	Dash      = { catalog = "Dash",      fallbackPose = nil,          blendIn = 0.03, blendOut = 0.10, movementPriority = false },
+	Attack1   = { catalog = "M1_1",      fallbackPose = "TestAttack", blendIn = 0.02, blendOut = 0.08, movementPriority = false },
+	Attack2   = { catalog = "M1_2",      fallbackPose = "TestAttack", blendIn = 0.02, blendOut = 0.08, movementPriority = false },
+	Attack3   = { catalog = "M1_3",      fallbackPose = "TestAttack", blendIn = 0.03, blendOut = 0.12, movementPriority = false },
+	Entrance  = { catalog = "Entrance",  fallbackPose = "Entrance",   blendIn = 0.10, blendOut = 0.20, movementPriority = false },
+	Victory   = { catalog = "Victory",   fallbackPose = "Victory",    blendIn = 0.10, blendOut = 0.20, movementPriority = false },
+}
+-- states whose Burst-worthy impact should trigger the aura VFX layer (matches the old TestAttack/Entrance/Victory triggers)
+local AURA_BURST_STATES = { Entrance = true, Victory = true, Attack1 = true, Attack2 = true, Attack3 = true }
 
 local active = {}
 local pending = {} -- model -> true while a retry loop is in flight, so attach() is idempotent under repeated signals
+
+-- one Animation instance + preload per catalog entry that is actually ready; built once at module load
+-- and rebuilt if nothing was ready yet (Jakob uploads while the server is running).
+local animationInstances = {}
+local function buildAnimationInstances()
+	for name, entry in pairs(Catalog.Animations) do
+		if Catalog.IsReady(name) and not animationInstances[name] then
+			local anim = Instance.new("Animation")
+			anim.Name = name
+			anim.AnimationId = "rbxassetid://" .. tostring(entry.AssetId)
+			animationInstances[name] = anim
+		end
+	end
+	local toPreload = {}
+	for _, anim in pairs(animationInstances) do
+		table.insert(toPreload, anim)
+	end
+	if #toPreload > 0 then
+		task.spawn(function()
+			ContentProvider:PreloadAsync(toPreload)
+		end)
+	end
+end
+buildAnimationInstances()
+
+local function getOrLoadTrack(a, catalogName)
+	if a.tracks[catalogName] then
+		return a.tracks[catalogName]
+	end
+	local anim = animationInstances[catalogName]
+	if not anim or not a.animator then
+		return nil
+	end
+	local ok, track = pcall(function()
+		return a.animator:LoadAnimation(anim)
+	end)
+	if not ok or not track then
+		return nil
+	end
+	local entry = Catalog.Animations[catalogName]
+	track.Priority = entry.Priority
+	track.Looped = entry.Loop
+	for _, markerName in ipairs(entry.Markers) do
+		track:GetMarkerReachedSignal(markerName):Connect(function(value)
+			a.markerEvent:Fire(catalogName, markerName, value)
+		end)
+	end
+	a.tracks[catalogName] = track
+	return track
+end
+
+local function stopCurrentTrack(a, blendOut)
+	if a.currentTrack then
+		a.currentTrack:Stop(blendOut)
+		a.currentTrack = nil
+		a.currentTrackName = nil
+	end
+	if a.loco.enabled == false then
+		a.loco.enabled = true
+	end
+end
 
 local function detach(model)
 	pending[model] = nil
@@ -36,6 +133,7 @@ local function detach(model)
 		a.loco.conn:Disconnect()
 	end
 	a.aura:Destroy()
+	a.markerEvent:Destroy()
 end
 
 local function doAttach(model)
@@ -47,20 +145,52 @@ local function doAttach(model)
 	local loco = Loco.attach(model, idle)
 	loco.poses = poses
 	local aura = Aura.new(model)
-	local a = { loco = loco, aura = aura, poses = poses, conns = {} }
+	local humanoid = model:FindFirstChildOfClass("Humanoid")
+	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+	local a = {
+		loco = loco, aura = aura, poses = poses, conns = {},
+		animator = animator, tracks = {}, currentTrack = nil, currentTrackName = nil,
+		markerEvent = Instance.new("BindableEvent"),
+	}
 	active[model] = a
+
 	table.insert(a.conns, RunService.Heartbeat:Connect(function(dt)
 		aura:Step(dt, loco.lastIdle)
 	end))
+
 	local function onAction()
 		local action = model:GetAttribute("Action")
-		if action and Poses.Library[action] then
-			poses:Play(action)
-			if action == "Entrance" or action == "Victory" or action == "TestAttack" then
-				aura:Burst(action)
+		local state = action and STATES[action]
+
+		if not state then
+			stopCurrentTrack(a, 0.2)
+			poses:Stop()
+			return
+		end
+
+		if Catalog.IsReady(state.catalog) and a.animator then
+			poses:Stop()
+			local track = getOrLoadTrack(a, state.catalog)
+			if track and a.currentTrackName ~= state.catalog then
+				stopCurrentTrack(a, state.blendOut)
+				if state.movementPriority then
+					a.loco.enabled = false
+				end
+				track:Play(state.blendIn)
+				a.currentTrack = track
+				a.currentTrackName = state.catalog
 			end
 		else
-			poses:Stop()
+			stopCurrentTrack(a, state.blendOut)
+			if state.fallbackPose then
+				poses:Play(state.fallbackPose)
+			else
+				poses:Stop()
+			end
+		end
+
+		if AURA_BURST_STATES[action] then
+			aura:Burst(action)
 		end
 	end
 	table.insert(a.conns, model:GetAttributeChangedSignal("Action"):Connect(onAction))
@@ -73,8 +203,8 @@ local function doAttach(model)
 	onAction()
 end
 
--- Retries readiness checks for ~2s (20 attempts x 0.1s) instead of a single synchronous check, so a model tagged the
--- same frame it is parented (or still mid-clone) is not silently skipped forever.
+-- Retries readiness checks for ~2s (20 attempts x 0.1s) instead of a single synchronous check, so a model
+-- tagged the same frame it is parented (or still mid-clone) is not silently skipped forever.
 local function attach(model)
 	if active[model] or pending[model] then
 		return
