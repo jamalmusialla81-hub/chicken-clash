@@ -12,7 +12,7 @@ Catalog.Creator = 1723752359
 
 Catalog.Animations = {
 	Idle = {
-		AssetId = "PENDING_UPLOAD",
+		AssetId = "100277678223854",
 		Version = 1,
 		MoonProject = "GoldChicken_Idle",
 		FPS = 24,
@@ -24,7 +24,7 @@ Catalog.Animations = {
 		Purpose = "Default standing loop: proud chest, breathing, tiny asymmetric wing/head motion.",
 	},
 	Walk = {
-		AssetId = "PENDING_UPLOAD",
+		AssetId = "72123468417063",
 		Version = 1,
 		MoonProject = "GoldChicken_Walk",
 		FPS = 24,
@@ -36,7 +36,7 @@ Catalog.Animations = {
 		Purpose = "Ground locomotion, walk speed.",
 	},
 	Run = {
-		AssetId = "PENDING_UPLOAD",
+		AssetId = "125907994261705",
 		Version = 1,
 		MoonProject = "GoldChicken_Run",
 		FPS = 24,
@@ -48,7 +48,7 @@ Catalog.Animations = {
 		Purpose = "Ground locomotion, run speed.",
 	},
 	JumpStart = {
-		AssetId = "PENDING_UPLOAD",
+		AssetId = "93974961914428",
 		Version = 1,
 		MoonProject = "GoldChicken_Jump",
 		FPS = 24,
@@ -60,7 +60,7 @@ Catalog.Animations = {
 		Purpose = "Compression + explosive extension into airborne state.",
 	},
 	Fall = {
-		AssetId = "PENDING_UPLOAD",
+		AssetId = "76517709521784",
 		Version = 1,
 		MoonProject = "GoldChicken_Fall",
 		FPS = 24,
@@ -72,7 +72,7 @@ Catalog.Animations = {
 		Purpose = "Airborne hold: wings partially open, legs gathering beneath body.",
 	},
 	Land = {
-		AssetId = "PENDING_UPLOAD",
+		AssetId = "112491103309721",
 		Version = 1,
 		MoonProject = "GoldChicken_Land",
 		FPS = 24,
@@ -84,7 +84,7 @@ Catalog.Animations = {
 		Purpose = "Ground contact, compression, rebound into a usable gameplay pose.",
 	},
 	Dash = {
-		AssetId = "PENDING_UPLOAD",
+		AssetId = "117139517593586",
 		Version = 1,
 		MoonProject = "GoldChicken_Dash",
 		FPS = 24,
@@ -97,7 +97,7 @@ Catalog.Animations = {
 		Purpose = "Server-validated dash visual: windup, spear-like commitment, brake, recovery. No baked displacement.",
 	},
 	M1_1 = {
-		AssetId = "PENDING_UPLOAD",
+		AssetId = "107232844604614",
 		Version = 1,
 		MoonProject = "GoldChicken_M1_1",
 		FPS = 24,
@@ -110,7 +110,7 @@ Catalog.Animations = {
 		Purpose = "Combo hit 1: fast wing-guard bash opener, feeds M1_2.",
 	},
 	M1_2 = {
-		AssetId = "PENDING_UPLOAD",
+		AssetId = "138348238761346",
 		Version = 1,
 		MoonProject = "GoldChicken_M1_2",
 		FPS = 24,
@@ -123,7 +123,7 @@ Catalog.Animations = {
 		Purpose = "Combo hit 2: opposite-wing follow-up, stronger torso rotation.",
 	},
 	M1_3 = {
-		AssetId = "PENDING_UPLOAD",
+		AssetId = "134578070434898",
 		Version = 1,
 		MoonProject = "GoldChicken_M1_3",
 		FPS = 24,
@@ -136,7 +136,7 @@ Catalog.Animations = {
 		Purpose = "Combo finisher: heavy loaded leg/torso strike, compressed timing, heavy overshoot.",
 	},
 	Entrance = {
-		AssetId = "PENDING_UPLOAD",
+		AssetId = "135732204356293",
 		Version = 1,
 		MoonProject = "GoldChicken_Entr",
 		FPS = 24,
@@ -148,7 +148,7 @@ Catalog.Animations = {
 		Purpose = "Match-start reveal cinematic pose sequence, pairs with CutsceneController camera track.",
 	},
 	Victory = {
-		AssetId = "PENDING_UPLOAD",
+		AssetId = "136284086985491",
 		Version = 1,
 		MoonProject = "GoldChicken_Vic",
 		FPS = 24,
