@@ -3,7 +3,10 @@
 local CollectionService = game:GetService("CollectionService")
 
 local ChickenStateService = {}
-local ALLOWED = { CombatIdle = true, Entrance = true, Victory = true, TestAttack = true }
+local ALLOWED = {
+	Idle = true, Walk = true, Run = true, JumpStart = true, Fall = true, Land = true, Dash = true,
+	Attack1 = true, Attack2 = true, Attack3 = true, Entrance = true, Victory = true,
+}
 
 function ChickenStateService.Activate(model: Model)
 	CollectionService:AddTag(model, "CombatChicken")

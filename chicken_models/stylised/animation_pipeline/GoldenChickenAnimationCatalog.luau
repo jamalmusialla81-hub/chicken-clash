@@ -93,6 +93,7 @@ Catalog.Animations = {
 		Loop = false,
 		Priority = Enum.AnimationPriority.Action,
 		Markers = {"Windup", "DashStart", "VFX", "DashEnd", "Recover"},
+		MarkerFrames = {Windup = 2, DashStart = 5, VFX = 6, DashEnd = 14, Recover = 18},
 		Purpose = "Server-validated dash visual: windup, spear-like commitment, brake, recovery. No baked displacement.",
 	},
 	M1_1 = {
@@ -105,6 +106,7 @@ Catalog.Animations = {
 		Loop = false,
 		Priority = Enum.AnimationPriority.Action,
 		Markers = {"Windup", "OnSwing", "ActiveStart", "Impact", "VFX", "Sound", "ComboOpen", "ActiveEnd", "ComboClose", "Recover"},
+		MarkerFrames = {Windup = 2, OnSwing = 5, ActiveStart = 7, Impact = 8, VFX = 8, Sound = 8, ComboOpen = 9, ActiveEnd = 12, ComboClose = 14, Recover = 18},
 		Purpose = "Combo hit 1: fast wing-guard bash opener, feeds M1_2.",
 	},
 	M1_2 = {
@@ -117,6 +119,7 @@ Catalog.Animations = {
 		Loop = false,
 		Priority = Enum.AnimationPriority.Action,
 		Markers = {"Windup", "ActiveStart", "Impact", "VFX", "Sound", "ComboOpen", "ActiveEnd", "ComboClose", "Recover"},
+		MarkerFrames = {Windup = 2, ActiveStart = 8, Impact = 9, VFX = 9, Sound = 9, ComboOpen = 10, ActiveEnd = 13, ComboClose = 16, Recover = 20},
 		Purpose = "Combo hit 2: opposite-wing follow-up, stronger torso rotation.",
 	},
 	M1_3 = {
@@ -129,6 +132,7 @@ Catalog.Animations = {
 		Loop = false,
 		Priority = Enum.AnimationPriority.Action,
 		Markers = {"Windup", "Charge", "OnSwing", "ActiveStart", "Impact", "VFX", "Sound", "ActiveEnd", "ComboClose", "Recover"},
+		MarkerFrames = {Windup = 2, Charge = 7, OnSwing = 10, ActiveStart = 13, Impact = 14, VFX = 14, Sound = 14, ActiveEnd = 17, ComboClose = 22, Recover = 28},
 		Purpose = "Combo finisher: heavy loaded leg/torso strike, compressed timing, heavy overshoot.",
 	},
 	Entrance = {
@@ -156,6 +160,21 @@ Catalog.Animations = {
 		Purpose = "Match-end triumphant pose sequence, strong held final frame for results screen.",
 	},
 }
+
+-- seconds from animation start to a named marker, computed from MarkerFrames/FPS (not from the client's
+-- AnimationTrack, since the server never plays tracks - this is what lets combat timing be authoritative
+-- even before an animation is uploaded).
+function Catalog.MarkerTime(name: string, markerName: string): number?
+	local entry = Catalog.Animations[name]
+	if not entry or not entry.MarkerFrames then
+		return nil
+	end
+	local frame = entry.MarkerFrames[markerName]
+	if not frame then
+		return nil
+	end
+	return frame / entry.FPS
+end
 
 function Catalog.IsReady(name: string): boolean
 	local entry = Catalog.Animations[name]
