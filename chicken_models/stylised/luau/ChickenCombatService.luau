@@ -258,10 +258,13 @@ function ChickenCombatService.RequestDash(model: Model, direction: Vector3?): bo
 		end)
 	end)
 
+	model:SetAttribute("DashCooldownDuration", DASH_COOLDOWN)
 	task.delay(entry.Duration, function()
 		if s.generation == generation then
 			s.busy = false
 			s.dashReadyAt = os.clock() + DASH_COOLDOWN
+			-- replicated for the HUD only; the authoritative check above still uses server-local os.clock()
+			model:SetAttribute("DashReadyAt", workspace:GetServerTimeNow() + DASH_COOLDOWN)
 			if model.Parent then
 				ChickenStateService.SetAction(model, "Idle")
 			end

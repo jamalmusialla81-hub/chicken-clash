@@ -24,6 +24,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
+local AuraRegistry = require(ReplicatedStorage:WaitForChild("ChickenClash"):WaitForChild("ChickenAuraRegistry"))
 
 local Controller = {}
 
@@ -230,6 +231,10 @@ local function enterCombatFirstPerson()
 	camera.CameraType = Enum.CameraType.Scriptable
 	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
 	setLocalTransparency(chicken, true)
+	local aura = AuraRegistry.Get(chicken)
+	if aura then
+		aura:SetFirstPerson(true)
+	end
 	targetFOV, currentFOV = FOV_BASE, FOV_BASE
 	if not renderConn then
 		RunService:BindToRenderStep("ChickenCombatCamera", Enum.RenderPriority.Camera.Value + 1, onRenderStep)
@@ -242,6 +247,10 @@ local function exitCombatFirstPerson()
 	local chicken = Controller.chicken
 	if chicken then
 		setLocalTransparency(chicken, false)
+		local aura = AuraRegistry.Get(chicken)
+		if aura then
+			aura:SetFirstPerson(false)
+		end
 	end
 	restoreCameraDefaults()
 end

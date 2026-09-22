@@ -32,6 +32,8 @@ local Idle = require(folder:WaitForChild("ChickenIdle"))
 local Poses = require(folder:WaitForChild("ChickenPoses"))
 local Aura = require(folder:WaitForChild("ChickenAura"))
 local Catalog = require(folder:WaitForChild("GoldenChickenAnimationCatalog"))
+local AuraRegistry = require(folder:WaitForChild("ChickenAuraRegistry"))
+local SoundKit = require(folder:WaitForChild("ChickenSoundKit"))
 
 -- Action attribute value -> playback spec. `fallbackPose` names a ChickenPoses.Library entry to use
 -- while the real asset is still "PENDING_UPLOAD"; nil means "no procedural equivalent exists" (the state
@@ -134,6 +136,8 @@ local function detach(model)
 	end
 	a.aura:Destroy()
 	a.markerEvent:Destroy()
+	AuraRegistry.Clear(model)
+	SoundKit.Cleanup(model)
 end
 
 local function doAttach(model)
@@ -145,6 +149,8 @@ local function doAttach(model)
 	local loco = Loco.attach(model, idle)
 	loco.poses = poses
 	local aura = Aura.new(model)
+	AuraRegistry.Set(model, aura)
+	SoundKit.Preload(model)
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
 	local a = {
@@ -156,6 +162,37 @@ local function doAttach(model)
 
 	table.insert(a.conns, RunService.Heartbeat:Connect(function(dt)
 		aura:Step(dt, loco.lastIdle)
+	end))
+
+	-- marker-driven VFX + sound: same authoritative timing every observer sees (world-space, full
+	-- intensity; Aura itself scales down for whichever single client has this chicken as their own
+	-- first-person view). SoundKit no-ops silently until Jakob fills in real SoundIds.
+	table.insert(a.conns, a.markerEvent.Event:Connect(function(catalogName, markerName)
+		if markerName == "Windup" then
+			SoundKit.Play(model, "AnticipationFeather")
+		elseif markerName == "Impact" then
+			if catalogName == "M1_1" then
+				aura:AttackEffect("Attack1")
+				SoundKit.Play(model, "Impact1")
+			elseif catalogName == "M1_2" then
+				aura:AttackEffect("Attack2")
+				SoundKit.Play(model, "Impact2")
+			elseif catalogName == "M1_3" then
+				aura:AttackEffect("Attack3")
+				SoundKit.Play(model, "ImpactHeavy")
+			end
+		elseif markerName == "OnSwing" then
+			SoundKit.Play(model, catalogName == "M1_3" and "WhooshHeavy" or "Whoosh1")
+		elseif catalogName == "Dash" and (markerName == "DashStart" or markerName == "DashEnd") then
+			aura:DashEffect(markerName == "DashStart" and "Start" or "End")
+			SoundKit.Play(model, markerName)
+		elseif catalogName == "Entrance" and markerName == "AuraOn" then
+			SoundKit.Play(model, "AuraActivate")
+		elseif catalogName == "Entrance" and markerName == "EntranceStart" then
+			SoundKit.Play(model, "Entrance")
+		elseif catalogName == "Victory" and markerName == "VictoryStart" then
+			SoundKit.Play(model, "Victory")
+		end
 	end))
 
 	local function onAction()
