@@ -1,0 +1,36 @@
+{
+  "status": "UI_INTEGRATION_FIXED; SESSION_CLOSING_OUT_HONESTLY",
+  "scope": "Section 14 (Golden Chicken UI integration across Roll/Dex/Chickens/Team/Team Deck) plus a final honest status of the remaining first-person-combat-camera brief items.",
+
+  "bug_found_and_fixed": {
+    "instance": "ReplicatedStorage.ChickenVisuals.Golden Chicken",
+    "problem": "This is the single shared preview model every UI screen resolves chickens by name from (RollClient.findChickenModel, ChickenClashUI.drawChicken/findVisual, TeamDeckDisplay.findVisual - all three are already fully generic, name-driven lookups requiring zero code changes). It contained exactly 1 part (a bare 'Body' MeshPart) while every sibling combat-tier chicken (Red/Storm/Light/Toxic/Lapis/Spotted/Phantom) has 40-90 parts. Golden Chicken would have rendered as a headless, wingless, tailless floating body on all 5 screens.",
+    "fix": "Rebuilt ReplicatedStorage.ChickenVisuals.Golden Chicken from a fresh clone of the real production rig (ServerStorage.CombatChickens.Golden Chicken): stripped Motor6D/Humanoid/LuaSourceContainer/Sound/ParticleEmitter/Beam/Trail/Light/Constraint/WeldConstraint/JointInstance/ProximityPrompt/ClickDetector/BillboardGui/SurfaceGui/Highlight and the invisible HumanoidRootPart, anchored+non-collide on every remaining BasePart, kept PrimaryPart=Body (matches the sibling convention). Result: 19 real geometry parts (Beak, Body, Cape, Chest, Comb, Halo, Head, both legs/feet, both wings, Neck, Tail).",
+    "verified_live": [
+      "Bounding box sane: 8.22 x 8.77 x 7.53 studs, correctly centred, left/right parts perfectly mirrored (e.g. LeftUpperLeg and RightUpperLeg differ only in Z sign) - not an exploded or corrupt clone.",
+      "Zero new runtime errors in get_runtime_logs after the change and through a full playtest (only pre-existing, unrelated noise: Cloud plugin load failures, DataStoreService Studio-API restrictions, SoundKit's intentional empty placeholder IDs).",
+      "Ran ChickenClashUI.drawChicken's exact logic (clone -> strip LuaSourceContainer/Sound/ParticleEmitter/Light -> anchor BaseParts -> GetBoundingBox -> WorldPivot -> PivotTo(CFrame.new())) directly against the new model: succeeded, 19 parts survived, no pcall failures. The same function was also observed live rendering Red Chicken (67 parts) correctly in the actual UI (Chickens nav icon), which uses this identical code path.",
+      "Granted a temporary test Golden Chicken IntValue to the local player's Chickens inventory folder to exercise the owned-chicken path, then removed it after verification (no persistent test state left behind)."
+    ],
+    "not_verified": "Could not confirm the fix visually with real screenshots or a real simulated button click - Studio's CaptureService returns a blank single-colour frame on this macOS host (host window capture is documented as Windows-only), and OS-level mouse-simulated clicks on the Chickens/Dex nav button did not register (coordinate-space mismatch between AbsolutePosition/GuiInset and the simulator's expected pixel space could not be resolved after two calibrated attempts). This is a known, pre-existing environment limitation, not something specific to this fix; the data-level and code-path-level verification above is the strongest evidence obtainable in this environment."
+  },
+
+  "other_screens_checked": {
+    "ChickenRollConfig": "Golden Chicken already has a real icon (rbxassetid://114301394838158) and a config entry (rank 10 of 78, '1 in 1,000') - no change needed.",
+    "ChickenClashUI marks list (line 308, watermark cycling)": "already includes 'Golden Chicken' - no change needed.",
+    "hardcoded chicken lists": "none found anywhere else in RollClient, ChickenClashUI, or TeamDeckDisplay; every other lookup is name-driven off ChickenVisuals/ChickenRollConfig, so no code changes were required or made."
+  },
+
+  "definition_of_done_final_status": {
+    "animation_authoring_and_upload": "COMPLETE, verified live (checkpoint a217efb).",
+    "combat_state_machine_hitbox_dash": "COMPLETE, verified live (server-authoritative, pre-existing commits).",
+    "first_person_combat_camera_7_state_machine": "COMPLETE, verified live including two real bugs found and fixed (FOV-stomping the dash pulse; Entrance never firing from Lobby) (checkpoint 55b7d00).",
+    "vfx_and_sound_layer": "COMPLETE for VFX (built-once, marker-driven, two-context first-person reduction), sound layer is fully functional but SoundIds are intentionally empty placeholders pending Jakob's own licensed audio (checkpoint 30d6611).",
+    "cutscene_controller": "COMPLETE, verified live round-trip Entrance and Victory (checkpoint 4223848).",
+    "ui_integration": "COMPLETE for the one real gap found (Golden Chicken preview geometry, this report); the underlying UI architecture already handled Golden Chicken generically and needed no rebuild.",
+    "performance_lifecycle_single_client": "COMPLETE for single-client resource management under 10-chicken load, zero leaks (checkpoint 779d2f1).",
+    "genuine_multiplayer_network_testing": "NOT performed - this environment only exposes Studio's own playtest peers on one machine, not real separate clients over a network. Documented as not tested rather than claimed.",
+    "mobile_controller_ultrawide_hardware_testing": "NOT performed - no real mobile/controller/ultrawide hardware available in this environment. Documented as not tested rather than claimed, per the brief's own explicit instruction not to fabricate such claims.",
+    "screenshot_evidence_capture": "NOT obtained - Studio's screenshot capture is non-functional on this macOS host for the entire session (confirmed again during this phase); this is a tooling limitation, not a feature gap."
+  }
+}
