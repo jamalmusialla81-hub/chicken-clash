@@ -1,0 +1,56 @@
+{
+  "recorded_at": "2026-09-22T21:11:00Z",
+  "purpose": "Pre-flight safety record before the playable-alpha expansion brief (10-phase). Written before any Phase 1+ changes.",
+  "place": {
+    "working_place_id": 91369156298808,
+    "game_id": 10767560420,
+    "place_name": "Chicken Clash",
+    "protected_original_place_id_NEVER_TOUCH": 127672215849650,
+    "confirmed_via": "mcp__robloxstudio__get_place_info returned placeId=91369156298808, gameId=10767560420 - matches authorized working place, not the protected original."
+  },
+  "local_working_file": "/Users/jakoblal/Roblox/ChickenClash_recovered.rbxl",
+  "git": {
+    "repo": "/Users/jakoblal/Roblox/chicken_models/stylised (and parent /Users/jakoblal/Roblox)",
+    "commit_before_this_phase": "c9dc56d",
+    "branch": "main",
+    "working_tree_at_start": "clean"
+  },
+  "backup": {
+    "local_backup_script": "/Users/jakoblal/Roblox/backup_local.sh",
+    "backup_written_to": "/Users/jakoblal/Roblox-Backups/2026-09-22_211021",
+    "backup_size": "264M",
+    "backup_contents_verified_nonempty": [
+      "chicken_models.tar.gz (115151137 bytes, tar -tzf verified)",
+      "roblox_repo.bundle (113367794 bytes, git bundle verify OK)",
+      "studio_checkpoints.tar.gz (40576708 bytes, tar -tzf verified)",
+      "SHA256SUMS.txt present with all 3 checksums"
+    ]
+  },
+  "studio_checkpoint": {
+    "name": "checkpoint-before-playable-alpha-expansion",
+    "services_rbxm": "/Users/jakoblal/Roblox/backup/checkpoint-before-playable-alpha-expansion.services.rbxm (2477608 bytes, 43 instances)",
+    "workspace_rbxm": "/Users/jakoblal/Roblox/backup/checkpoint-before-playable-alpha-expansion.workspace.rbxm (88481 bytes, 3 instances: Leaderboards, Map, Terrain)",
+    "note": "export_rbxm cannot serialize a bare Service instance directly (confirmed: game.Lighting alone fails with 'Provided instances can't be serialized', a real Roblox SerializeInstancesAsync restriction, not a content bug) - so each service's direct children were enumerated and exported individually instead. Workspace export deliberately excludes the live 'Camera' instance, the 'Moon Animator 2' plugin workspace object, and the leftover 'GoldenChicken_MoonAnimTemp' animation-pipeline temp rig (all non-gameplay, non-essential runtime/plugin clutter)."
+  },
+  "important_object_paths_for_this_phase": {
+    "combat_rig": "ServerStorage.CombatChickens[\"Golden Chicken\"]",
+    "preview_model": "ReplicatedStorage.ChickenVisuals[\"Golden Chicken\"]",
+    "animation_catalog": "ReplicatedStorage.ChickenClash.GoldenChickenAnimationCatalog",
+    "client_animator": "StarterPlayer.StarterPlayerScripts.ChickenAnimator",
+    "combat_service": "ServerScriptService.ChickenCombatService",
+    "state_service": "ServerScriptService.ChickenStateService",
+    "camera_controller": "ReplicatedStorage.ChickenClash.ChickenCombatCameraController",
+    "camera_bootstrap": "StarterPlayer.StarterPlayerScripts.ChickenCombatCamera",
+    "cutscene_controller": "ReplicatedStorage.ChickenClash.ChickenCutsceneController",
+    "hud": "StarterPlayer.StarterPlayerScripts.ChickenCombatHUD",
+    "aura_vfx": "ReplicatedStorage.ChickenClash.ChickenAura",
+    "aura_registry": "ReplicatedStorage.ChickenClash.ChickenAuraRegistry",
+    "sound_kit": "ReplicatedStorage.ChickenClash.ChickenSoundKit",
+    "roll_config": "ReplicatedStorage.ChickenRollConfig",
+    "roll_client": "StarterGui.RollClient",
+    "main_ui": "StarterPlayer.StarterPlayerScripts.ChickenClashUI",
+    "team_deck_display": "StarterPlayer.StarterPlayerScripts.TeamDeckDisplay",
+    "pre_existing_server_bootstrap": "ServerScriptService.Server",
+    "pre_existing_data_layer_candidates": "ServerScriptService.Services, ServerScriptService.Classes, ServerScriptService.Utils, ServerScriptService.Combat, ReplicatedStorage.Configuration - not yet audited this phase"
+  }
+}
