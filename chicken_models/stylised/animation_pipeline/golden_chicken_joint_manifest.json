@@ -1,0 +1,36 @@
+{
+  "rig": "ServerStorage.CombatChickens.Golden Chicken (temp clone: Workspace.GoldenChicken_MoonAnimTemp)",
+  "root": "HumanoidRootPart",
+  "forward": "-Z (Roblox standard, confirmed prior session)",
+  "note": "Every Motor6D's C0/C1 rotation submatrix is identical: row0=(0,0,1) row1=(0,1,0) row2=(-1,0,0). This is a fixed 90-degree conjugation baked into the rig (R_fix). Motor6D.Transform (== Pose.CFrame authored in a KeyframeSequence) is sandwiched as C0*Transform*C1^-1, so Transform's LOCAL axes are conjugated by R_fix before appearing as world-visual rotation. Derived mapping (validated by calibration sequence, see calibration_report.json): local Transform = CFrame.Angles(-Roll, Yaw, Pitch) where Pitch = nod around world/mesh +X, Yaw = turn around +Y, Roll = bank around +Z (standard -Z-forward convention). All Motor6D.Transform values at bind pose are identity.",
+  "joints": [
+    {"name": "RootJoint", "part0": "HumanoidRootPart", "part1": "Body", "parent_joint": null, "role": "pelvis/core root", "animate_translation": false, "safe_deg": {"pitch": [-8, 8], "yaw": [-10, 10], "roll": [-6, 6]}},
+    {"name": "Chest", "part0": "Body", "part1": "Chest", "parent_joint": "RootJoint", "role": "chest/torso mass", "animate_translation": false, "safe_deg": {"pitch": [-10, 12], "yaw": [-12, 12], "roll": [-8, 8]}},
+    {"name": "Neck", "part0": "Chest", "part1": "Neck", "parent_joint": "Chest", "role": "neck base", "animate_translation": false, "safe_deg": {"pitch": [-15, 15], "yaw": [-20, 20], "roll": [-10, 10]}},
+    {"name": "Head", "part0": "Neck", "part1": "Head", "parent_joint": "Neck", "role": "head, drives face/beak/comb/halo readability", "animate_translation": false, "safe_deg": {"pitch": [-20, 20], "yaw": [-35, 35], "roll": [-15, 15]}},
+    {"name": "Beak", "part0": "Head", "part1": "Beak", "parent_joint": "Head", "role": "beak (mostly static, tiny accent motion only)", "animate_translation": false, "safe_deg": {"pitch": [-5, 8], "yaw": [-3, 3], "roll": [-3, 3]}},
+    {"name": "Comb", "part0": "Head", "part1": "Comb", "parent_joint": "Head", "role": "crest, secondary jiggle follower", "animate_translation": false, "safe_deg": {"pitch": [-6, 10], "yaw": [-5, 5], "roll": [-6, 6]}},
+    {"name": "Halo", "part0": "Head", "part1": "Halo", "parent_joint": "Head", "role": "royal halo accent, stable except intentional cinematic beats", "animate_translation": false, "safe_deg": {"pitch": [-4, 4], "yaw": [-6, 6], "roll": [-4, 4]}},
+    {"name": "Tail", "part0": "Body", "part1": "Tail", "parent_joint": "RootJoint", "role": "tail, delayed overlap follower", "animate_translation": false, "safe_deg": {"pitch": [-15, 20], "yaw": [-15, 15], "roll": [-10, 10]}},
+    {"name": "LeftWingUpper", "part0": "Chest", "part1": "LeftWingUpper", "parent_joint": "Chest", "role": "left wing shoulder, counterbalance + attack limb", "animate_translation": false, "safe_deg": {"pitch": [-30, 45], "yaw": [-20, 60], "roll": [-40, 40]}},
+    {"name": "LeftWingLower", "part0": "LeftWingUpper", "part1": "LeftWingLower", "parent_joint": "LeftWingUpper", "role": "left wing tip, follows upper with delay/arc", "animate_translation": false, "safe_deg": {"pitch": [-20, 50], "yaw": [-10, 10], "roll": [-20, 20]}},
+    {"name": "RightWingUpper", "part0": "Chest", "part1": "RightWingUpper", "parent_joint": "Chest", "role": "right wing shoulder, counterbalance + attack limb (mirrors LeftWingUpper)", "animate_translation": false, "safe_deg": {"pitch": [-30, 45], "yaw": [-60, 20], "roll": [-40, 40]}},
+    {"name": "RightWingLower", "part0": "RightWingUpper", "part1": "RightWingLower", "parent_joint": "RightWingUpper", "role": "right wing tip (mirrors LeftWingLower)", "animate_translation": false, "safe_deg": {"pitch": [-20, 50], "yaw": [-10, 10], "roll": [-20, 20]}},
+    {"name": "LeftUpperLeg", "part0": "Body", "part1": "LeftUpperLeg", "parent_joint": "RootJoint", "role": "left hip, primary locomotion drive", "animate_translation": false, "safe_deg": {"pitch": [-45, 45], "yaw": [-10, 10], "roll": [-8, 8]}},
+    {"name": "LeftLowerLeg", "part0": "LeftUpperLeg", "part1": "LeftLowerLeg", "parent_joint": "LeftUpperLeg", "role": "left knee", "animate_translation": false, "safe_deg": {"pitch": [-60, 5], "yaw": [-5, 5], "roll": [-5, 5]}},
+    {"name": "LeftFoot", "part0": "LeftLowerLeg", "part1": "LeftFoot", "parent_joint": "LeftLowerLeg", "role": "left talon, ground contact readability", "animate_translation": false, "safe_deg": {"pitch": [-30, 25], "yaw": [-5, 5], "roll": [-5, 5]}},
+    {"name": "RightUpperLeg", "part0": "Body", "part1": "RightUpperLeg", "parent_joint": "RootJoint", "role": "right hip (mirrors LeftUpperLeg)", "animate_translation": false, "safe_deg": {"pitch": [-45, 45], "yaw": [-10, 10], "roll": [-8, 8]}},
+    {"name": "RightLowerLeg", "part0": "RightUpperLeg", "part1": "RightLowerLeg", "parent_joint": "RightUpperLeg", "role": "right knee (mirrors LeftLowerLeg)", "animate_translation": false, "safe_deg": {"pitch": [-60, 5], "yaw": [-5, 5], "roll": [-5, 5]}},
+    {"name": "RightFoot", "part0": "RightLowerLeg", "part1": "RightFoot", "parent_joint": "RightLowerLeg", "role": "right talon (mirrors LeftFoot)", "animate_translation": false, "safe_deg": {"pitch": [-30, 25], "yaw": [-5, 5], "roll": [-5, 5]}},
+    {"name": "Cape", "part0": "Chest", "part1": "Cape", "parent_joint": "Chest", "role": "cape/cloth, delayed secondary follower", "animate_translation": false, "safe_deg": {"pitch": [-10, 25], "yaw": [-15, 15], "roll": [-15, 15]}}
+  ],
+  "validation": {
+    "connected_hierarchy": true,
+    "cycles": false,
+    "duplicate_child_ownership": false,
+    "missing_parts": false,
+    "root_is_humanoidrootpart": true,
+    "joint_count": 19,
+    "all_transforms_identity_at_bind": true
+  }
+}

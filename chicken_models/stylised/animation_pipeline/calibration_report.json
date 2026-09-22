@@ -1,0 +1,23 @@
+{
+  "status": "PASSED",
+  "method": "Applied Authoring.Local(pitch,yaw,roll) values directly to Motor6D.Transform on an isolated, unbound calibration clone (Workspace.GoldenChicken_CalibTemp, separate from the Moon-Animator-bound rig to avoid disturbing its live state), then visually inspected via robloxstudio capture_screenshot from two angles.",
+  "conversion_formula": "local Transform = CFrame.Angles(math.rad(-roll), math.rad(yaw), math.rad(pitch)) -- implemented as Authoring.Local in GoldenChickenAnimationAuthoring.luau",
+  "derivation": "Every Motor6D's C0/C1 share an identical baked rotation submatrix (row0=(0,0,1) row1=(0,1,0) row2=(-1,0,0), a 90-degree conjugation R_fix). Since Transform sits between C0 and C1^-1 (World(Part1) = World(Part0)*C0*Transform*C1^-1), Transform's local axes are conjugated by R_fix: local-Z-rotation -> world pitch (+X axis), local-Y-rotation -> world yaw (+Y axis, unchanged), local-X-rotation -> world roll (+Z axis, sign-flipped). This holds for every joint since R_fix is identical rig-wide.",
+  "test_pose": {
+    "frame": 12,
+    "joints": {
+      "RootJoint(Body)": "Local(pitch=15, yaw=0, roll=0)",
+      "LeftUpperLeg": "Local(pitch=-30, yaw=0, roll=0)",
+      "RightWingUpper": "Local(pitch=0, yaw=0, roll=40)"
+    }
+  },
+  "observations": [
+    "Body/torso visibly tilted forward along the front-back axis (pitch) with no twist or roll artifact - confirms pitch maps to nod, not yaw/roll.",
+    "LeftUpperLeg visibly swung on the hip with no unintended knee/foot detachment - confirms leg pitch is a clean hip flexion.",
+    "RightWingUpper visibly rotated/spread outward from the shoulder with no inversion - confirms roll maps to a spread/bank motion, not a flap (pitch) or unnatural twist.",
+    "No NaN, no scale change, no part detachment, no backward-facing geometry, no root/world-position jump (only the targeted Motor6D.Transform values changed).",
+    "Both wings appeared spread in the front-view screenshot; cross-checked against the rig's neutral/bind-pose screenshot from earlier in this session and confirmed the rig's OWN resting design already holds the wings partly open - this is the unposed base silhouette, not an artifact of the calibration pose."
+  ],
+  "residual_uncertainty": "Exact sign polarity for 'which direction reads as forward/up/proud' per specific joint was not exhaustively re-verified for every one of the 19 joints (impractical to check individually) - the underlying axis-to-motion MAPPING (pitch=nod, yaw=turn, roll=bank) is confirmed correct and rig-wide via the shared R_fix. Individual pose sign choices in each production animation are spot-checked with a screenshot as they are authored rather than assumed.",
+  "verdict": "Conversion layer accepted. Proceeding to batch-generate the full animation set using Authoring.Local/MirrorLocal without further changes to the core formula."
+}

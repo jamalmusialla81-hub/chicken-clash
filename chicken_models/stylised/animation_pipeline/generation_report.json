@@ -1,0 +1,27 @@
+{
+  "status": "ALL OK",
+  "generator": "ReplicatedStorage.ChickenClash.GoldenChickenAnimationAuthoring (Authoring.Build)",
+  "specs": "ReplicatedStorage.ChickenClash.GoldenChickenAnimationSpecs",
+  "stored_at": "Workspace.GoldenChicken_MoonAnimTemp.AnimSaves (temp rig; original ServerStorage.CombatChickens.Golden Chicken untouched)",
+  "fixes_applied_during_generation": [
+    "Enum.PoseEasingStyle has no 'Sine' member (valid: Linear, Constant, Elastic, Cubic, Bounce, CubicV2) - replaced all Sine references with Cubic throughout GoldenChickenAnimationSpecs.luau.",
+    "Keyframe:AddMarker expects a real KeyframeMarker Instance, not (name, value) strings - fixed Authoring.Build to Instance.new('KeyframeMarker'), set .Name/.Value, then kf:AddMarker(marker).",
+    "Roblox's require() cache is keyed by ModuleScript instance and is NOT invalidated by editing Source via the set_script_source tool - had to destroy+recreate both ModuleScript instances fresh after each source fix before re-requiring, otherwise stale cached module code kept running."
+  ],
+  "sequences": [
+    {"name": "GoldenChicken_Idle_v1", "keyframes": 5, "markers": 0, "loop": true, "priority": "Idle"},
+    {"name": "GoldenChicken_Walk_v1", "keyframes": 9, "markers": 3, "loop": true, "priority": "Movement"},
+    {"name": "GoldenChicken_Run_v1", "keyframes": 9, "markers": 3, "loop": true, "priority": "Movement"},
+    {"name": "GoldenChicken_JumpStart_v1", "keyframes": 6, "markers": 1, "loop": false, "priority": "Movement"},
+    {"name": "GoldenChicken_Fall_v1", "keyframes": 3, "markers": 0, "loop": true, "priority": "Movement"},
+    {"name": "GoldenChicken_Land_v1", "keyframes": 6, "markers": 2, "loop": false, "priority": "Movement"},
+    {"name": "GoldenChicken_Dash_v1", "keyframes": 8, "markers": 5, "loop": false, "priority": "Action"},
+    {"name": "GoldenChicken_M1_1_v1", "keyframes": 9, "markers": 10, "loop": false, "priority": "Action"},
+    {"name": "GoldenChicken_M1_2_v1", "keyframes": 9, "markers": 9, "loop": false, "priority": "Action"},
+    {"name": "GoldenChicken_M1_3_v1", "keyframes": 9, "markers": 10, "loop": false, "priority": "Action"},
+    {"name": "GoldenChicken_Entrance_v1", "keyframes": 6, "markers": 5, "loop": false, "priority": "Action"},
+    {"name": "GoldenChicken_Victory_v1", "keyframes": 5, "markers": 5, "loop": false, "priority": "Action"}
+  ],
+  "marker_counts_verified_against_spec": "all 12 sequences' marker counts match the exact marker lists required by the brief (cross-checked by hand: Walk 3, Run 3, JumpStart 1, Land 2, Dash 5, M1_1 10, M1_2 9, M1_3 10, Entrance 5, Victory 5, Idle/Fall 0).",
+  "next_steps": ["Import each sequence into the open Moon Animator project via File > Import / Paste Keyframes", "visual refinement pass", "export back to KeyframeSequence", "upload as Animation assets under creator 1723752359", "populate GoldenChickenAnimationCatalog", "runtime integration"]
+}
