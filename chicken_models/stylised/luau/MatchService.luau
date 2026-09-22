@@ -332,6 +332,14 @@ local function teardownMatch(match, reason)
 	if match.rigFolder then
 		match.rigFolder:Destroy()
 	end
+	-- Real gap found in Phase 4 HUD testing: MatchState was left on "Returning" forever after teardown
+	-- (nothing ever set it back), so MatchHUD's results panel - which shows for Results/Returning - never
+	-- auto-hid once a player was actually back in the lobby. "Returning" must be transient.
+	for _, side in ipairs(match.players) do
+		if not isBot(side) and side.Parent then
+			publish(side, "MatchState", "Lobby")
+		end
+	end
 end
 
 local function runMatch(match)
@@ -361,6 +369,12 @@ local function runMatch(match)
 	publishBoth(match, "MatchOpponentName", function(_, opp) return tostring(isBot(opp) and opp.Name or opp.Name) end)
 	publishBoth(match, "MatchRoundWins", function() return 0 end)
 	publishBoth(match, "MatchOpponentRoundWins", function() return 0 end)
+	-- Phase 4 pre-fight card data: both sides use the one combat-ready chicken today (COMBAT_RIG_TEMPLATE_NAME
+	-- itself, not a hardcoded string), so this reads correctly once Phase 6 adds per-player chicken choice.
+	publishBoth(match, "MatchChickenName", function() return COMBAT_RIG_TEMPLATE_NAME end)
+	publishBoth(match, "MatchOpponentChickenName", function() return COMBAT_RIG_TEMPLATE_NAME end)
+	publishBoth(match, "MatchChickenRarity", function() return "Rare" end)
+	publishBoth(match, "MatchOpponentChickenRarity", function() return "Rare" end)
 
 	if match.players[1] == BOT or match.players[2] == BOT then
 		runBotAI(match)
@@ -490,6 +504,25 @@ end
 function MatchService.IsInMatch(player: Player): boolean
 	return playerToMatch[player] ~= nil
 end
+
+--============================== Phase 4: rematch/early-return remote ==============================--
+-- Rematch only re-queues (goes through the exact same queue/bot-fallback path as the lobby portal) - it
+-- never re-teleports or re-spawns anything itself, so there is no separate "instant rematch" code path
+-- to keep in sync with the real match-start flow. Queue() itself already no-ops if still mid-teardown
+-- (playerToMatch[player] still set), so a Rematch press during the Results delay is simply ignored until
+-- teardownMatch actually clears them.
+local rematchRemote = combatFolder:FindFirstChild("RematchRequest")
+if not rematchRemote then
+	rematchRemote = Instance.new("RemoteEvent")
+	rematchRemote.Name = "RematchRequest"
+	rematchRemote.Parent = combatFolder
+end
+rematchRemote.OnServerEvent:Connect(function(player: Player)
+	if playerToMatch[player] then
+		return -- still mid-match/teardown; ignore rather than double-queue
+	end
+	MatchService.Queue(player)
+end)
 
 --============================== disconnect / leave handling ==============================--
 Players.PlayerRemoving:Connect(function(player)

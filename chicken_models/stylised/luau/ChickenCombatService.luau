@@ -148,6 +148,7 @@ function ChickenCombatService.RequestAttack(model: Model): boolean
 	s.busy = true
 	s.generation += 1
 	local generation = s.generation
+	model:SetAttribute("ComboStep", nextStep) -- replicated read-only for HUD combo feedback
 
 	runActiveWindow(model, actionName, catalogName, generation)
 
@@ -174,6 +175,7 @@ function ChickenCombatService.RequestAttack(model: Model): boolean
 			s.comboWindowOpen = false
 			if model.Parent then
 				ChickenStateService.SetAction(model, "Idle")
+				model:SetAttribute("ComboStep", 0)
 			end
 		end
 	end)
