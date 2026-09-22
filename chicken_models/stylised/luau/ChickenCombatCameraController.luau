@@ -269,6 +269,15 @@ function Controller.SetLocalChicken(model: Model?)
 	end
 	table.insert(conns, model:GetAttributeChangedSignal("Action"):Connect(function()
 		local action = model:GetAttribute("Action")
+		-- Entrance/Victory must fire from ANY state (that is their whole job: transitioning into/out of
+		-- combat) - only the moment-to-moment combat feedback below is gated to CombatFirstPerson.
+		if action == "Entrance" then
+			Controller.EnterEntrance()
+			return
+		elseif action == "Victory" then
+			Controller.EnterVictory()
+			return
+		end
 		if Controller.state ~= States.CombatFirstPerson then
 			return
 		end
@@ -286,10 +295,6 @@ function Controller.SetLocalChicken(model: Model?)
 					targetFOV = FOV_BASE
 				end
 			end)
-		elseif action == "Entrance" then
-			Controller.EnterEntrance()
-		elseif action == "Victory" then
-			Controller.EnterVictory()
 		end
 	end))
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
@@ -315,32 +320,17 @@ function Controller.EnterEntrance()
 	if not Controller.chicken then
 		return
 	end
-	camera.CameraType = Enum.CameraType.Scriptable
 	Controller.state = States.EntranceCinematic
-	-- CutsceneController owns the actual entrance camera path; this just marks the state and hands off.
-	-- On EntranceEnd it (or, until that exists, the marker hook below) calls EnterCombat().
-	local track = nil
-	local humanoid = Controller.chicken:FindFirstChildOfClass("Humanoid")
-	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
-	if animator then
-		for _, t in ipairs(animator:GetPlayingAnimationTracks()) do
-			if t.Name == "Entrance" or t.Animation.Name == "Entrance" then
-				track = t
-				break
-			end
+	local Cutscene = require(ReplicatedStorage.ChickenClash.ChickenCutsceneController)
+	Cutscene.Play(Controller.chicken, "Entrance", true, function(reachedEnd)
+		if reachedEnd then
+			Controller.EnterCombat()
+		else
+			Controller.ReturnToLobby()
 		end
-	end
-	if track then
-		local conn
-		conn = track:GetMarkerReachedSignal("EntranceEnd"):Connect(function()
-			conn:Disconnect()
-			if Controller.state == States.EntranceCinematic then
-				Controller.EnterCombat()
-			end
-		end)
-		table.insert(conns, conn)
-	end
+	end)
 end
+
 
 function Controller.EnterCombat()
 	if not Controller.chicken then
@@ -362,9 +352,13 @@ function Controller.EnterVictory()
 	if not Controller.chicken then
 		return
 	end
+	local chicken = Controller.chicken
 	exitCombatFirstPerson()
-	camera.CameraType = Enum.CameraType.Scriptable
 	Controller.state = States.VictoryCinematic
+	local Cutscene = require(ReplicatedStorage.ChickenClash.ChickenCutsceneController)
+	Cutscene.Play(chicken, "Victory", false, function()
+		Controller.ReturnToLobby()
+	end)
 end
 
 function Controller.ReturnToLobby()
