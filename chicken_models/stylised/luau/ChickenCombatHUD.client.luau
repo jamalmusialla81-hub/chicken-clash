@@ -56,7 +56,7 @@ local core = reticleDot(0, 0, 5, Color3.fromRGB(255, 226, 150), 0.15) -- warm go
 local hitConfirmedRemote = ReplicatedStorage:WaitForChild("ChickenHitConfirmed")
 local pulseT = 0
 hitConfirmedRemote.OnClientEvent:Connect(function(kind: string)
-	if kind == "Dealt" and screenGui.Enabled then
+	if kind == "Dealt" and screenGui.Enabled and Controller.hitMarkerEnabled ~= false then
 		pulseT = 1
 	end
 end)
@@ -119,6 +119,60 @@ reducedMotionButton.MouseButton1Click:Connect(function()
 	reducedMotionButton.Text = "Reduced Motion: " .. (Controller.reducedMotion and "On" or "Off")
 end)
 
+-- Phase 3 combat settings: small cycle-buttons stacked under Reduced Motion, same visual language,
+-- shown only during combat (this HUD's own existing show/hide already handles that) rather than a
+-- separate always-on settings screen - keeps this purely additive to the working legacy Settings menu
+-- (StarterGui's "old" Settings frame, opened elsewhere for music/graphics) instead of risking changes
+-- to a UI this pass never needed to touch.
+local function settingsButton(order, text)
+	local b = reducedMotionButton:Clone()
+	b.Name = "Setting_" .. order
+	b.Position = UDim2.new(1, -16, 0, 16 + order * 32)
+	b.Text = text
+	b.Parent = screenGui
+	return b
+end
+
+local SHAKE_LEVELS = { 0, 0.5, 1, 1.5, 2 }
+local shakeIndex = 3
+local shakeButton = settingsButton(1, "Shake: Normal")
+shakeButton.MouseButton1Click:Connect(function()
+	shakeIndex = (shakeIndex % #SHAKE_LEVELS) + 1
+	Controller.SetShakeStrength(SHAKE_LEVELS[shakeIndex])
+	local pct = math.floor(SHAKE_LEVELS[shakeIndex] * 100)
+	shakeButton.Text = "Shake: " .. pct .. "%"
+end)
+
+local FOV_LEVELS = { -8, -4, 0, 4, 8 }
+local fovIndex = 3
+local fovButton = settingsButton(2, "FOV Adjust: 0")
+fovButton.MouseButton1Click:Connect(function()
+	fovIndex = (fovIndex % #FOV_LEVELS) + 1
+	Controller.SetFOVAdjust(FOV_LEVELS[fovIndex])
+	fovButton.Text = "FOV Adjust: " .. (FOV_LEVELS[fovIndex] >= 0 and "+" or "") .. FOV_LEVELS[fovIndex]
+end)
+
+local hitMarkerButton = settingsButton(3, "Hit Marker: On")
+hitMarkerButton.MouseButton1Click:Connect(function()
+	Controller.SetHitMarkerEnabled(not Controller.hitMarkerEnabled)
+	hitMarkerButton.Text = "Hit Marker: " .. (Controller.hitMarkerEnabled and "On" or "Off")
+end)
+
+local damageNumbersButton = settingsButton(4, "Damage Numbers: On")
+damageNumbersButton.MouseButton1Click:Connect(function()
+	Controller.SetDamageNumbersEnabled(not Controller.damageNumbersEnabled)
+	damageNumbersButton.Text = "Damage Numbers: " .. (Controller.damageNumbersEnabled and "On" or "Off")
+end)
+
+local CROSSHAIR_LEVELS = { 0.5, 0.75, 1, 1.5, 2 }
+local crosshairIndex = 3
+local crosshairButton = settingsButton(5, "Crosshair: 100%")
+crosshairButton.MouseButton1Click:Connect(function()
+	crosshairIndex = (crosshairIndex % #CROSSHAIR_LEVELS) + 1
+	Controller.SetCrosshairScale(CROSSHAIR_LEVELS[crosshairIndex])
+	crosshairButton.Text = "Crosshair: " .. math.floor(CROSSHAIR_LEVELS[crosshairIndex] * 100) .. "%"
+end)
+
 -- health reads from a "Health"/"MaxHealth" attribute on the chicken IF the real health system sets one;
 -- until that system exists this simply shows full health rather than fabricating a number.
 local function updateHealthBar()
@@ -161,9 +215,13 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 	updateHealthBar()
 	updateDashCooldown()
+	local scale = Controller.crosshairScale or 1
+	reticle.Size = UDim2.fromOffset(14 * scale, 14 * scale)
 	if pulseT > 0 then
 		pulseT = math.max(pulseT - dt * 4, 0)
-		core.Size = UDim2.fromOffset(5 + pulseT * 6, 5 + pulseT * 6)
+		core.Size = UDim2.fromOffset((5 + pulseT * 6) * scale, (5 + pulseT * 6) * scale)
 		core.BackgroundTransparency = 0.15 + (1 - pulseT) * 0
+	else
+		core.Size = UDim2.fromOffset(5 * scale, 5 * scale)
 	end
 end)

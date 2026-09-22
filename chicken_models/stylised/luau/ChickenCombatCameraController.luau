@@ -59,6 +59,14 @@ local HITSTOP = { Attack1 = 0.035, Attack2 = 0.045, Attack3 = 0.07 }
 Controller.state = States.Disabled
 Controller.chicken = nil
 Controller.reducedMotion = false
+-- Phase 3 combat settings panel: session-only (this environment's DataStoreService is blocked in Studio
+-- regardless - see CombatSettingsPanel.client.luau), safe defaults, clamped ranges so a bad saved/typed
+-- value can never push the camera outside a sane window.
+Controller.shakeStrength = 1
+Controller.fovAdjust = 0
+Controller.hitMarkerEnabled = true
+Controller.crosshairScale = 1
+Controller.damageNumbersEnabled = true
 
 local conns = {} -- per-chicken connections, cleared on every chicken swap/detach
 local renderConn = nil
@@ -113,6 +121,7 @@ local function addShake(magnitude: number, duration: number)
 	if Controller.reducedMotion then
 		magnitude *= 0.5
 	end
+	magnitude *= Controller.shakeStrength
 	shakeMag = math.max(shakeMag, magnitude)
 	shakeDuration = duration
 	shakeTimer = 0
@@ -215,7 +224,7 @@ local function onRenderStep(dt: number)
 		-- this frame (camera + effects read as "paused" without touching workspace time or physics).
 		-- fovOverrideUntil similarly protects a temporary pulse (e.g. dash) from being stomped every
 		-- frame by the ordinary locomotion-based FOV baseline below.
-		targetFOV = moveLevel == 2 and FOV_RUN or FOV_BASE
+		targetFOV = (moveLevel == 2 and FOV_RUN or FOV_BASE) + Controller.fovAdjust
 	end
 	local fovT = math.min(dt * FOV_LERP_SPEED, 1)
 	currentFOV += (targetFOV - currentFOV) * fovT
@@ -370,6 +379,28 @@ end
 
 function Controller.SetReducedMotion(enabled: boolean)
 	Controller.reducedMotion = enabled
+end
+
+-- Phase 3 settings panel setters: every value is clamped here (not just at the UI layer) so this stays
+-- safe to call from anywhere, including a stray/replayed remote or a future non-UI caller.
+function Controller.SetShakeStrength(value: number)
+	Controller.shakeStrength = math.clamp(value, 0, 2)
+end
+
+function Controller.SetFOVAdjust(value: number)
+	Controller.fovAdjust = math.clamp(value, -8, 8)
+end
+
+function Controller.SetHitMarkerEnabled(enabled: boolean)
+	Controller.hitMarkerEnabled = enabled == true
+end
+
+function Controller.SetCrosshairScale(value: number)
+	Controller.crosshairScale = math.clamp(value, 0.5, 2)
+end
+
+function Controller.SetDamageNumbersEnabled(enabled: boolean)
+	Controller.damageNumbersEnabled = enabled == true
 end
 
 --============================== server-confirmed hit feedback ==============================--

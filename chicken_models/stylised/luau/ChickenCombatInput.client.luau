@@ -23,7 +23,8 @@ local attackRemote = combatFolder:WaitForChild("AttackRequest")
 local dashRemote = combatFolder:WaitForChild("DashRequest")
 
 local function isActive(): boolean
-	return player:GetAttribute("MatchState") == "Active"
+	local state = player:GetAttribute("MatchState")
+	return state == "Active" or state == "Practice"
 end
 
 local function requestAttack()

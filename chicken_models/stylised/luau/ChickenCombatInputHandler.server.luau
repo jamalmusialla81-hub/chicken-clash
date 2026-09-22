@@ -4,18 +4,29 @@
 	RemoteEvent at all - every attack/dash in this project's whole history was triggered by a script
 	directly calling ChickenCombatService, never by real client input.
 
-	Security: the model a request applies to is ALWAYS resolved server-side via
-	MatchService.GetPlayerChicken(player) - the client never sends a model reference, so there is no way to
-	name someone else's chicken. Every request also requires MatchService.CanPlayerFight(player) (state ==
-	Active for a real match this player is in), is rate-limited independently of ChickenCombatService's own
-	busy/cooldown logic, and Dash's direction argument is type-checked (Vector3 or nil; anything else is a
-	silent no-op, never an error) before it ever reaches ChickenCombatService's own NaN/inf sanitizer. ]]
+	Security: the model a request applies to is ALWAYS resolved server-side via MatchService or
+	PracticeService's own GetPlayerChicken(player) - the client never sends a model reference, so there is
+	no way to name someone else's chicken. Every request also requires CanPlayerFight(player) from whichever
+	of the two the player is actually in (a real match's Active state, or an active practice session), is
+	rate-limited independently of ChickenCombatService's own busy/cooldown logic, and Dash's direction
+	argument is type-checked (Vector3 or nil; anything else is a silent no-op, never an error) before it
+	ever reaches ChickenCombatService's own NaN/inf sanitizer. ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local ChickenCombatService = require(ServerScriptService.Combat:WaitForChild("ChickenCombatService"))
 local MatchService = require(ServerScriptService.Combat:WaitForChild("MatchService"))
+local PracticeService = require(ServerScriptService.Combat:WaitForChild("PracticeService"))
+
+-- a player is only ever in a real match OR practice, never both (Enter/Queue both check the other's
+-- state isn't already occupied) - checking both here just means one input path serves either context.
+local function canFight(player: Player): boolean
+	return MatchService.CanPlayerFight(player) or PracticeService.CanPlayerFight(player)
+end
+local function resolveChicken(player: Player): Model?
+	return MatchService.GetPlayerChicken(player) or PracticeService.GetPlayerChicken(player)
+end
 
 local combatFolder = ReplicatedStorage:WaitForChild("Combat")
 local attackRemote = combatFolder:FindFirstChild("AttackRequest")
@@ -51,10 +62,10 @@ attackRemote.OnServerEvent:Connect(function(player: Player)
 	if rateLimited(player) then
 		return
 	end
-	if not MatchService.CanPlayerFight(player) then
+	if not canFight(player) then
 		return
 	end
-	local model = MatchService.GetPlayerChicken(player)
+	local model = resolveChicken(player)
 	if not model then
 		return
 	end
@@ -68,10 +79,10 @@ dashRemote.OnServerEvent:Connect(function(player: Player, direction)
 	if direction ~= nil and typeof(direction) ~= "Vector3" then
 		return -- malformed payload: silently dropped, never errors, never reaches ChickenCombatService
 	end
-	if not MatchService.CanPlayerFight(player) then
+	if not canFight(player) then
 		return
 	end
-	local model = MatchService.GetPlayerChicken(player)
+	local model = resolveChicken(player)
 	if not model then
 		return
 	end
