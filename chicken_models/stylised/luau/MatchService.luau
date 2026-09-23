@@ -24,8 +24,9 @@ local ChickenStateService = require(script.Parent:WaitForChild("ChickenStateServ
 local ChickenCombatService = require(script.Parent:WaitForChild("ChickenCombatService"))
 local ChickenHealthService = require(script.Parent:WaitForChild("ChickenHealthService"))
 local ChickenMovementDriver = require(script.Parent:WaitForChild("ChickenMovementDriver"))
+local LobbyReturn = require(script.Parent:WaitForChild("LobbyReturn"))
 local folder = game:GetService("ReplicatedStorage"):WaitForChild("ChickenClash")
-local Catalog = require(folder:WaitForChild("GoldenChickenAnimationCatalog"))
+local ChickenDefinitions = require(folder:WaitForChild("ChickenDefinitions"))
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local combatFolder = ReplicatedStorage:WaitForChild("Combat")
@@ -47,7 +48,7 @@ local MatchService = {}
 -- Roblox game using a non-default Character model.
 Players.CharacterAutoLoads = false
 Players.PlayerAdded:Connect(function(player)
-	player:LoadCharacter()
+	LobbyReturn.RestoreAvatar(player)
 end)
 
 local MAX_HEALTH = 100
@@ -57,7 +58,6 @@ local WINS_NEEDED = 2
 local BOT_FALLBACK_WAIT = 8
 local SUDDEN_DEATH_DURATION = 10
 local RETURN_DELAY = 4
-local COMBAT_RIG_TEMPLATE_NAME = "Golden Chicken" -- only combat-ready chicken today; Phase 6 adds a second
 
 local arenasFolder = workspace.Map.Arenas
 local matchRigsFolder = workspace:FindFirstChild("ActiveMatches") or Instance.new("Folder")
@@ -112,11 +112,14 @@ end
 
 --============================== chicken spawn/despawn ==============================--
 local function spawnFighter(match, side, spawnAttachment)
-	local template = ServerStorage.CombatChickens[COMBAT_RIG_TEMPLATE_NAME]
+	local defId = match.chickenDefId[sideKey(side)]
+	local def = ChickenDefinitions.Get(defId)
+	local template = ServerStorage.CombatChickens[def.CombatModelName]
 	local clone = template:Clone()
 	clone.Name = isBot(side) and "PracticeBot_Fighter" or (side.Name .. "_Fighter")
 	clone:PivotTo(spawnAttachment.WorldCFrame)
 	clone.Parent = match.rigFolder
+	clone:SetAttribute("ChickenDefId", defId)
 
 	CollectionService:AddTag(clone, "CombatChicken")
 	if not isBot(side) then
@@ -124,7 +127,7 @@ local function spawnFighter(match, side, spawnAttachment)
 	end
 	clone:SetAttribute("MatchId", match.id)
 	ChickenStateService.Activate(clone, isBot(side) and nil or side)
-	ChickenHealthService.Init(clone, MAX_HEALTH)
+	ChickenHealthService.Init(clone, def.Stats.MaxHealth or MAX_HEALTH)
 	ChickenMovementDriver.Attach(clone)
 
 	if not isBot(side) then
@@ -321,10 +324,10 @@ local function teardownMatch(match, reason)
 		if not isBot(side) then
 			playerToMatch[side] = nil
 			-- give them back a normal hub avatar now that CharacterAutoLoads is off and their fighter
-			-- clone (which was standing in as Character) has just been destroyed above.
-			if side.Parent then
-				side:LoadCharacter()
-			end
+			-- clone (which was standing in as Character) has just been destroyed above. LobbyReturn is the
+			-- one shared path Players.PlayerAdded/MatchService/PracticeService all use, so there is never
+			-- more than one code path deciding how a player gets their real body back.
+			LobbyReturn.RestoreAvatar(side)
 		end
 	end
 	releaseArena(match.arena)
@@ -369,10 +372,16 @@ local function runMatch(match)
 	publishBoth(match, "MatchOpponentName", function(_, opp) return tostring(isBot(opp) and opp.Name or opp.Name) end)
 	publishBoth(match, "MatchRoundWins", function() return 0 end)
 	publishBoth(match, "MatchOpponentRoundWins", function() return 0 end)
-	-- Phase 4 pre-fight card data: both sides use the one combat-ready chicken today (COMBAT_RIG_TEMPLATE_NAME
-	-- itself, not a hardcoded string), so this reads correctly once Phase 6 adds per-player chicken choice.
-	publishBoth(match, "MatchChickenName", function() return COMBAT_RIG_TEMPLATE_NAME end)
-	publishBoth(match, "MatchOpponentChickenName", function() return COMBAT_RIG_TEMPLATE_NAME end)
+	-- Phase 4 pre-fight card data: Phase 6 resolves this through ChickenDefinitions per side instead of a
+	-- single hardcoded string, so it stays correct once a second combat-compatible chicken exists and a
+	-- real per-player selection flow is wired in (ChickenDefinitions.ResolveForPlayer is the one seam that
+	-- will need to change, not this file).
+	publishBoth(match, "MatchChickenName", function(self_)
+		return ChickenDefinitions.Get(match.chickenDefId[sideKey(self_)]).DisplayName
+	end)
+	publishBoth(match, "MatchOpponentChickenName", function(_, opp)
+		return ChickenDefinitions.Get(match.chickenDefId[sideKey(opp)]).DisplayName
+	end)
 	publishBoth(match, "MatchChickenRarity", function() return "Rare" end)
 	publishBoth(match, "MatchOpponentChickenRarity", function() return "Rare" end)
 
@@ -384,16 +393,22 @@ local function runMatch(match)
 	-- the existing ChickenCutsceneController; server just waits out the same authored duration so Countdown
 	-- starts in sync rather than trusting a client completion signal for match-critical timing).
 	enterState(match, "Entrance")
+	-- both sides' entrances are waited out together with one server-side task.wait, so if two different
+	-- chicken definitions ever have different Entrance durations, use the longer of the two rather than
+	-- risk starting Countdown before the slower side's cutscene has actually finished.
+	local maxEntranceDuration = 0
 	for _, side in ipairs(match.players) do
 		local model = match.chickens[sideKey(side)]
 		ChickenStateService.SetAction(model, "Entrance")
+		local def = ChickenDefinitions.Get(match.chickenDefId[sideKey(side)])
+		maxEntranceDuration = math.max(maxEntranceDuration, def.AnimationCatalog.Animations.Entrance.Duration)
 		if not isBot(side) then
 			-- deterministic camera trigger (see MatchCameraBridge) instead of relying on the controller's
 			-- own attribute-change auto-wiring, which can race a fast tag+Action burst and miss the cue.
 			cameraDirective:FireClient(side, "EnterEntrance", model)
 		end
 	end
-	task.wait(Catalog.Animations.Entrance.Duration + 0.25)
+	task.wait(maxEntranceDuration + 0.25)
 	if match.torndown then return end
 
 	while true do
@@ -478,6 +493,12 @@ function MatchService._startMatch(a, b)
 		players = { a, b },
 		wins = { [sideKey(a)] = 0, [sideKey(b)] = 0 },
 		chickens = {},
+		-- Phase 6: resolved once per match rather than re-resolved per lookup, so a player's mid-match
+		-- selection change elsewhere can never retroactively mismatch an already-spawned fighter.
+		chickenDefId = {
+			[sideKey(a)] = ChickenDefinitions.ResolveForPlayer(isBot(a) and nil or a),
+			[sideKey(b)] = ChickenDefinitions.ResolveForPlayer(isBot(b) and nil or b),
+		},
 		state = "Preparing",
 		torndown = false,
 	}

@@ -1,16 +1,23 @@
 --[[ ChickenCombatCamera (client, local-only). Dedicated first-person combat camera controller - camera
 	logic lives here and nowhere else (not in ChickenAnimator, ChickenCombatService, or any UI script).
 
-	State machine: Disabled -> Lobby -> EntranceCinematic -> CombatFirstPerson -> (Death/Spectator |
-	VictoryCinematic) -> ReturningToLobby -> Lobby. Nothing here ever decides combat legality, damage, or
-	match outcome - it only RENDERS whatever state it is told to enter. Integration point: since this pass
-	of the project has no match-state service yet, call Controller.SetLocalChicken(model) once the real
-	ownership system knows which chicken belongs to this client, then drive transitions with
-	Controller.EnterEntrance() / EnterCombat() / EnterDeathSpectator() / EnterVictory() / ReturnToLobby()
-	from wherever that authoritative match/round system lives. As a reasonable default without that system
-	wired up yet, this script also auto-transitions from the chicken's own "Action" attribute (Entrance/
-	Victory) and CombatChicken tag add/remove, and from Humanoid.Died - remove those listeners once a real
-	match-state service exists so camera transitions are driven by one source of truth, not two.
+	State machine (reference-informed consolidation pass): Disabled -> Lobby -> Cutscene ->
+	(PracticeCombat | MatchCombat) -> (MenuOpen | DeathSpectator | Cutscene[Victory] | Results) ->
+	ReturnToLobby -> Lobby. Nothing here ever decides combat legality, damage, or match outcome - it only
+	RENDERS whatever state it is told to enter.
+
+	PracticeCombat vs MatchCombat is inferred from whether the chicken carries a "MatchId" attribute
+	(MatchService sets one, PracticeService never does) rather than threading a new parameter through
+	PracticeService/MatchService/MatchCameraBridge's existing 2-arg remote contract - same signal MatchHUD
+	already reads for the same purpose, so this isn't a new source of truth.
+
+	Integration point: call Controller.SetLocalChicken(model) once the real ownership system knows which
+	chicken belongs to this client, then drive transitions with Controller.EnterEntrance() / EnterVictory()
+	/ EnterResults() / ReturnToLobby() from wherever the authoritative match/round system lives. As a
+	reasonable default without a dedicated match-state service, this script also auto-transitions from the
+	chicken's own "Action" attribute (Entrance/Victory), CombatChicken tag add/remove, and the player's own
+	"MatchState" attribute reaching Results/Returning - all wrapped in Controller.Start()/Stop() so this
+	auto-wiring can be cleanly disabled if a real match-state service ever replaces it.
 
 	Every offset layer (sway, bob, recoil, shake) is recomputed from the STABLE base CFrame each frame and
 	summed once - never accumulated onto the previous frame's camera CFrame - so nothing can drift. ]]
@@ -31,17 +38,27 @@ local Controller = {}
 local States = {
 	Disabled = "Disabled",
 	Lobby = "Lobby",
-	EntranceCinematic = "EntranceCinematic",
-	CombatFirstPerson = "CombatFirstPerson",
+	Cutscene = "Cutscene",
+	PracticeCombat = "PracticeCombat",
+	MatchCombat = "MatchCombat",
+	MenuOpen = "MenuOpen",
+	Results = "Results",
+	-- Kept as a real addition beyond the required 7 states - death-spectating is genuinely distinct
+	-- camera behavior (third-person, watching the winner) that doesn't fold cleanly into any of them.
 	DeathSpectator = "DeathSpectator",
-	VictoryCinematic = "VictoryCinematic",
-	ReturningToLobby = "ReturningToLobby",
 }
 Controller.States = States
 
+local function isCombatState(state: string): boolean
+	return state == States.PracticeCombat or state == States.MatchCombat
+end
+
 -- Parts hidden LOCALLY (LocalTransparencyModifier, never replicated Transparency) so this client's own
 -- view isn't clipped by its own face/crown while everyone else keeps seeing the full rig normally.
-local HIDDEN_IN_FIRST_PERSON = { "Head", "Beak", "Comb", "Halo", "Neck" }
+-- Cape is included because it drapes from right behind the neck/CombatCameraAttachment and clips the
+-- view there; Chest/wings/legs/tail are deliberately left OUT so the player still sees their own body
+-- peripherally (chest lower edge, wing edges, legs/talons, lower body) instead of nothing at all.
+local HIDDEN_IN_FIRST_PERSON = { "Head", "Beak", "Comb", "Halo", "Neck", "Cape" }
 
 local FOV_BASE = 78
 local FOV_RUN = 81
@@ -54,6 +71,21 @@ local RECOIL = {
 	Attack3 = { pitch = 1.1, duration = 0.16, shake = 0.4, shakeDuration = 0.20 },
 }
 local HITSTOP = { Attack1 = 0.035, Attack2 = 0.045, Attack3 = 0.07 }
+
+-- Real bug found live: the camera previously had NO mouse-look at all - it just rigidly copied the
+-- Chest's CombatCameraAttachment orientation, which only ever changes when the Humanoid's AutoRotate
+-- turns the body to face WASD movement. Moving the mouse while standing still did nothing whatsoever.
+-- Fix: track yaw/pitch from raw mouse delta ourselves (standard MouseBehavior.LockCenter FPS pattern),
+-- disable AutoRotate while in first person, and drive BOTH the body's facing (yaw only - chickens don't
+-- pitch their whole body to look up/down) and the camera (yaw+pitch) from it every frame. Body-facing
+-- driving the camera (rather than the other way around) is why ChickenCombatService's hitbox and
+-- ChickenCombatInput's dash direction already point wherever the camera looks - both read the body's
+-- LookVector/the camera's LookVector respectively, and this keeps them in agreement.
+local MOUSE_SENSITIVITY = 0.0035 -- radians per pixel of raw mouse delta
+local MAX_PITCH = math.rad(75)
+local yaw, pitch = 0, 0
+local eyeOffsetLocal = CFrame.new() -- captured once per combat-entry: attachment's offset in HRP-local space
+local menuOpen = false -- true while a settings/selection panel (or Results) owns the mouse
 
 --============================== state ==============================--
 Controller.state = States.Disabled
@@ -96,12 +128,30 @@ local function setLocalTransparency(model: Model, hidden: boolean)
 	end
 end
 
+-- One cursor-state function, not three separate inline assignments scattered across enter/exit/menu
+-- transitions (which is how MouseIconEnabled drifted out of sync with MouseBehavior in the first place).
+-- "Menu" and "Lobby" are the same cursor state (Default behavior, icon visible) but kept as distinct
+-- named modes since they are conceptually different callers and may diverge later.
+local function SetCursorMode(mode: string)
+	if mode == "Combat" then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+		UserInputService.MouseIconEnabled = false
+	else -- "Menu" or "Lobby"
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		UserInputService.MouseIconEnabled = true
+	end
+end
+Controller.SetCursorMode = SetCursorMode
+
 local function restoreCameraDefaults()
 	camera.CameraType = Enum.CameraType.Custom
 	camera.FieldOfView = FOV_BASE
-	camera.CameraSubject = player.Character and player.Character:FindFirstChildOfClass("Humanoid") or camera.CameraSubject
-	UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-	UserInputService.MouseIconEnabled = true
+	local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+	camera.CameraSubject = humanoid or camera.CameraSubject
+	if humanoid then
+		humanoid.AutoRotate = true
+	end
+	SetCursorMode("Lobby")
 	if renderConn then
 		RunService:UnbindFromRenderStep("ChickenCombatCamera")
 		renderConn = nil
@@ -111,6 +161,8 @@ local function restoreCameraDefaults()
 	shakeMag, shakeTimer, shakeDuration = 0, 0, 0
 	hitStopUntil, fovOverrideUntil = 0, 0
 	dashImpulse = 0
+	yaw, pitch = 0, 0
+	menuOpen = false
 end
 
 --============================== camera math ==============================--
@@ -204,19 +256,34 @@ local function computeLayeredOffset(dt: number): (CFrame, number)
 end
 
 --============================== render step ==============================--
+-- The one and only place camera.CFrame is ever assigned. Order matches the spec exactly: read mouse
+-- delta -> update yaw -> update pitch -> clamp pitch -> base CFrame from the attachment -> apply yaw/pitch
+-- -> apply sway/bob -> apply recoil -> apply shake -> set camera.CFrame once -> update FOV separately.
 local function onRenderStep(dt: number)
 	local chicken = Controller.chicken
 	if not chicken or not chicken.Parent then
 		return
 	end
+	local hrp = chicken:FindFirstChild("HumanoidRootPart")
 	local chest = chicken:FindFirstChild("Chest")
 	local att = chest and chest:FindFirstChild("CombatCameraAttachment")
-	if not att then
+	if not hrp or not att then
 		return
 	end
 
-	local base = att.WorldCFrame
+	if not menuOpen then
+		local delta = UserInputService:GetMouseDelta()
+		yaw -= delta.X * MOUSE_SENSITIVITY
+		pitch = math.clamp(pitch - delta.Y * MOUSE_SENSITIVITY, -MAX_PITCH, MAX_PITCH)
+	end
+
+	-- body always faces the camera's yaw (pitch is camera-only - chickens don't pitch their whole body to
+	-- look up/down); AssemblyLinearVelocity/physics are untouched, only the rotation component changes.
+	hrp.CFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, yaw, 0)
+
+	local eyePos = (hrp.CFrame * eyeOffsetLocal).Position
 	local offset, moveLevel = computeLayeredOffset(dt)
+	local base = CFrame.new(eyePos) * CFrame.Angles(0, yaw, 0) * CFrame.Angles(pitch, 0, 0)
 	camera.CFrame = base * offset
 
 	if os.clock() >= hitStopUntil and os.clock() >= fovOverrideUntil then
@@ -232,13 +299,41 @@ local function onRenderStep(dt: number)
 end
 
 --============================== state transitions ==============================--
-local function enterCombatFirstPerson()
+-- Deliberately bound at Character+1, NOT the generic "Camera priority" a reference architecture might
+-- use: RenderPriority.Character (300) runs AFTER RenderPriority.Camera (200) in this engine build, and
+-- this function writes hrp.CFrame directly. Binding before Character's own movement step (i.e. at
+-- Camera+1) meant this write got partially fought by movement resolution immediately afterward, every
+-- single frame - that fight is exactly what a user reported live as "sliding/input-delayed movement."
+-- Binding after Character (Character+1) fixed it, verified live. Keeping that fix intentionally overrides
+-- a generic "Camera.Value + 1" convention for this specific reason.
+local RENDER_PRIORITY = Enum.RenderPriority.Character.Value + 1
+
+local function enterCombatFirstPerson(mode: string)
 	local chicken = Controller.chicken
 	if not chicken then
 		return
 	end
+	local hrp = chicken:FindFirstChild("HumanoidRootPart")
+	local chest = chicken:FindFirstChild("Chest")
+	local att = chest and chest:FindFirstChild("CombatCameraAttachment")
+	if hrp then
+		-- seed yaw from however the character currently faces, so entering first person never snaps the
+		-- view to a different direction than what was already on screen.
+		local _, currentYaw = hrp.CFrame:ToEulerAnglesYXZ()
+		yaw = currentYaw
+		pitch = 0
+		if att then
+			eyeOffsetLocal = hrp.CFrame:ToObjectSpace(att.WorldCFrame)
+		end
+		local humanoid = chicken:FindFirstChildOfClass("Humanoid")
+		if humanoid then
+			humanoid.AutoRotate = false
+		end
+	end
 	camera.CameraType = Enum.CameraType.Scriptable
-	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+	SetCursorMode("Combat")
+	UserInputService:GetMouseDelta() -- clear any accumulated delta from before combat started
+	menuOpen = false
 	setLocalTransparency(chicken, true)
 	local aura = AuraRegistry.Get(chicken)
 	if aura then
@@ -246,10 +341,10 @@ local function enterCombatFirstPerson()
 	end
 	targetFOV, currentFOV = FOV_BASE, FOV_BASE
 	if not renderConn then
-		RunService:BindToRenderStep("ChickenCombatCamera", Enum.RenderPriority.Camera.Value + 1, onRenderStep)
+		RunService:BindToRenderStep("ChickenCombatCamera", RENDER_PRIORITY, onRenderStep)
 		renderConn = true
 	end
-	Controller.state = States.CombatFirstPerson
+	Controller.state = mode == "Match" and States.MatchCombat or States.PracticeCombat
 end
 
 local function exitCombatFirstPerson()
@@ -279,7 +374,7 @@ function Controller.SetLocalChicken(model: Model?)
 	table.insert(conns, model:GetAttributeChangedSignal("Action"):Connect(function()
 		local action = model:GetAttribute("Action")
 		-- Entrance/Victory must fire from ANY state (that is their whole job: transitioning into/out of
-		-- combat) - only the moment-to-moment combat feedback below is gated to CombatFirstPerson.
+		-- combat) - only the moment-to-moment combat feedback below is gated to an active combat state.
 		if action == "Entrance" then
 			Controller.EnterEntrance()
 			return
@@ -287,7 +382,7 @@ function Controller.SetLocalChicken(model: Model?)
 			Controller.EnterVictory()
 			return
 		end
-		if Controller.state ~= States.CombatFirstPerson then
+		if not isCombatState(Controller.state) then
 			return
 		end
 		if RECOIL[action] then
@@ -300,7 +395,7 @@ function Controller.SetLocalChicken(model: Model?)
 			targetFOV = FOV_DASH_PEAK
 			fovOverrideUntil = os.clock() + 0.18
 			task.delay(0.18, function()
-				if Controller.state == States.CombatFirstPerson then
+				if isCombatState(Controller.state) then
 					targetFOV = FOV_BASE
 				end
 			end)
@@ -329,23 +424,26 @@ function Controller.EnterEntrance()
 	if not Controller.chicken then
 		return
 	end
-	Controller.state = States.EntranceCinematic
+	local chicken = Controller.chicken
+	local mode = chicken:GetAttribute("MatchId") and "Match" or "Practice"
+	Controller.state = States.Cutscene
 	local Cutscene = require(ReplicatedStorage.ChickenClash.ChickenCutsceneController)
-	Cutscene.Play(Controller.chicken, "Entrance", true, function(reachedEnd)
+	Cutscene.Play(chicken, "Entrance", true, function(reachedEnd)
 		if reachedEnd then
-			Controller.EnterCombat()
+			enterCombatFirstPerson(mode)
 		else
 			Controller.ReturnToLobby()
 		end
 	end)
 end
 
-
-function Controller.EnterCombat()
+-- Kept as a thin public wrapper (some external caller may still reasonably expect an EnterCombat entry
+-- point) - internal transitions call enterCombatFirstPerson directly with an already-known mode.
+function Controller.EnterCombat(mode: string?)
 	if not Controller.chicken then
 		return
 	end
-	enterCombatFirstPerson()
+	enterCombatFirstPerson(mode or "Practice")
 end
 
 function Controller.EnterDeathSpectator()
@@ -363,15 +461,27 @@ function Controller.EnterVictory()
 	end
 	local chicken = Controller.chicken
 	exitCombatFirstPerson()
-	Controller.state = States.VictoryCinematic
+	Controller.state = States.Cutscene
 	local Cutscene = require(ReplicatedStorage.ChickenClash.ChickenCutsceneController)
 	Cutscene.Play(chicken, "Victory", false, function()
 		Controller.ReturnToLobby()
 	end)
 end
 
+-- Real gap this closes: nothing previously released the mouse when a match reached its Results screen,
+-- so MatchHUD's Rematch/Return-to-Lobby buttons were unclickable (the camera was still holding
+-- MouseBehavior.LockCenter from combat). Reuses the same menuOpen render-step gate Menu already uses -
+-- the frame simply freezes with the cursor free, rather than unbinding the render step entirely.
+function Controller.EnterResults()
+	if Controller.state == States.Results then
+		return
+	end
+	Controller.state = States.Results
+	SetCursorMode("Menu")
+	menuOpen = true
+end
+
 function Controller.ReturnToLobby()
-	Controller.state = States.ReturningToLobby
 	exitCombatFirstPerson()
 	Controller.SetLocalChicken(nil)
 	Controller.state = States.Lobby
@@ -409,32 +519,103 @@ end
 -- requirement. Never trust a local-only guess at whether a swing landed.
 local hitConfirmedRemote = ReplicatedStorage:WaitForChild("ChickenHitConfirmed")
 hitConfirmedRemote.OnClientEvent:Connect(function(kind: string, actionName: string, damage: number)
-	if Controller.state ~= States.CombatFirstPerson then
+	if not isCombatState(Controller.state) then
 		return
 	end
 	if kind == "Dealt" then
 		addShake(actionName == "Attack3" and 0.55 or 0.28, 0.18)
+		local aura = Controller.chicken and AuraRegistry.Get(Controller.chicken)
+		if aura then
+			aura:ImpactFlash()
+		end
 	elseif kind == "Taken" then
 		addShake(0.5, 0.22)
 		triggerRecoil(-2.5, 0.15) -- brief backward jolt, opposite sign from an outgoing swing's recoil
 	end
 end)
 
---============================== best-effort auto wiring ==============================--
--- Until a real match-state service exists, fall back to reacting to this client's own chicken (identified
--- by an "OwnerUserId" attribute, a common convention) entering/leaving combat. Remove this block once a
--- real authoritative match/round system calls SetLocalChicken/EnterEntrance/etc. directly.
-CollectionService:GetInstanceAddedSignal("CombatChicken"):Connect(function(model)
-	if model:GetAttribute("OwnerUserId") == player.UserId then
-		Controller.SetLocalChicken(model)
+--============================== menu state ==============================--
+-- Settings/chicken-selection panels call this instead of tearing the camera controller down: the render
+-- step keeps running (camera stays put, reticle/HUD stay visible) but stops reading mouse delta into
+-- yaw/pitch, so closing the panel resumes looking from exactly where it left off - never a snap. Also
+-- transitions Controller.state to/from MenuOpen (a real state, not just a hidden boolean) and remembers
+-- which combat state to restore.
+local preMenuState: string? = nil
+
+function Controller.SetMenuOpen(open: boolean)
+	if menuOpen == open then
+		return
 	end
-end)
-CollectionService:GetInstanceRemovedSignal("CombatChicken"):Connect(function(model)
-	if Controller.chicken == model then
-		Controller.ReturnToLobby()
+	if open then
+		if not isCombatState(Controller.state) then
+			return
+		end
+		preMenuState = Controller.state
+		Controller.state = States.MenuOpen
+		menuOpen = true
+		SetCursorMode("Menu")
+	else
+		if Controller.state ~= States.MenuOpen then
+			return
+		end
+		Controller.state = preMenuState or States.PracticeCombat
+		preMenuState = nil
+		menuOpen = false
+		SetCursorMode("Combat")
+		UserInputService:GetMouseDelta() -- discard whatever accumulated while the cursor was free
 	end
-end)
+end
+
+function Controller.IsMenuOpen(): boolean
+	return menuOpen
+end
+
+--============================== lifecycle: Start/Stop ==============================--
+-- Idempotent by design: repeated Start() calls are no-ops once already started, and Stop() safely
+-- unbinds/restores exactly once. Wraps the "best-effort auto wiring" (CollectionService tag watching +
+-- the player's own MatchState attribute) that substitutes for a dedicated match-state service today -
+-- calling Stop() cleanly disables all of it and returns the camera/cursor to Lobby defaults.
+local started = false
+local lifecycleConns = {}
+
+function Controller.Start()
+	if started then
+		return
+	end
+	started = true
+	table.insert(lifecycleConns, CollectionService:GetInstanceAddedSignal("CombatChicken"):Connect(function(model)
+		if model:GetAttribute("OwnerUserId") == player.UserId then
+			Controller.SetLocalChicken(model)
+		end
+	end))
+	table.insert(lifecycleConns, CollectionService:GetInstanceRemovedSignal("CombatChicken"):Connect(function(model)
+		if Controller.chicken == model then
+			Controller.ReturnToLobby()
+		end
+	end))
+	table.insert(lifecycleConns, player:GetAttributeChangedSignal("MatchState"):Connect(function()
+		local matchState = player:GetAttribute("MatchState")
+		if (matchState == "Results" or matchState == "Returning")
+			and Controller.state ~= States.Results
+			and Controller.state ~= States.Lobby then
+			Controller.EnterResults()
+		end
+	end))
+end
+
+function Controller.Stop()
+	if not started then
+		return
+	end
+	started = false
+	for _, c in ipairs(lifecycleConns) do
+		c:Disconnect()
+	end
+	table.clear(lifecycleConns)
+	Controller.ReturnToLobby()
+end
 
 Controller.state = States.Lobby
+Controller.Start()
 
 return Controller

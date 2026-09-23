@@ -19,8 +19,19 @@ local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local folder = ReplicatedStorage:WaitForChild("ChickenClash")
-local Catalog = require(folder:WaitForChild("GoldenChickenAnimationCatalog"))
+local ChickenDefinitions = require(folder:WaitForChild("ChickenDefinitions"))
 local ChickenStateService = require(script.Parent:WaitForChild("ChickenStateService"))
+
+-- Phase 6: attack/dash timing, damage, and hitbox scale used to come from one hardcoded Golden Chicken
+-- catalog + module-level constants; now they resolve per-model via the "ChickenDefId" attribute set at
+-- spawn by MatchService/PracticeService, so a future combat-compatible chicken with its own catalog/stats
+-- "just works" without touching this file again. Falls back to the default definition if a model somehow
+-- has no ChickenDefId yet (defensive - should not happen for anything tagged CombatChicken by the real
+-- spawn path).
+local function getDef(model: Model)
+	local defId = model:GetAttribute("ChickenDefId") or ChickenDefinitions.DefaultId
+	return ChickenDefinitions.Get(defId) or ChickenDefinitions.Get(ChickenDefinitions.DefaultId)
+end
 
 local ChickenCombatService = {}
 ChickenCombatService.HitEvent = Instance.new("BindableEvent") -- (attacker: Model, victim: Model, damage: number, attackName: string)
@@ -45,13 +56,13 @@ local function firePlayerForModel(model: Model, ...)
 	end
 end
 
+-- Attack1/2/3 -> which catalog animation key plays them: this mapping is the same for any chicken whose
+-- catalog is validated as sharing Golden's shape (RigCompatibilityValidator's whole point), so it stays a
+-- global constant; only the DAMAGE numbers and hitbox size are per-chicken (via Stats/HitboxScale below).
 local ATTACK_CHAIN = { "Attack1", "Attack2", "Attack3" }
 local ATTACK_CATALOG = { Attack1 = "M1_1", Attack2 = "M1_2", Attack3 = "M1_3" }
-local ATTACK_DAMAGE = { Attack1 = 8, Attack2 = 10, Attack3 = 18 }
-local HITBOX_RANGE = 7 -- studs, in front of HumanoidRootPart
-local HITBOX_HALF_WIDTH = 4
-local DASH_COOLDOWN = 2.5
-local DASH_DISTANCE = 24
+local BASE_HITBOX_RANGE = 7 -- studs, in front of HumanoidRootPart, before a def's HitboxScale is applied
+local BASE_HITBOX_HALF_WIDTH = 4
 
 local combos = setmetatable({}, { __mode = "k" }) -- model -> state, weak so a destroyed model's state is GC'd
 
@@ -71,12 +82,15 @@ local function queryHitbox(model: Model)
 	if not hrp then
 		return {}
 	end
+	local scale = getDef(model).HitboxScale or 1
+	local range = BASE_HITBOX_RANGE * scale
+	local halfWidth = BASE_HITBOX_HALF_WIDTH * scale
 	local forward = hrp.CFrame.LookVector
-	local center = hrp.Position + forward * (HITBOX_RANGE * 0.5)
+	local center = hrp.Position + forward * (range * 0.5)
 	local params = OverlapParams.new()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = { model }
-	local size = Vector3.new(HITBOX_HALF_WIDTH * 2, 6, HITBOX_RANGE)
+	local size = Vector3.new(halfWidth * 2, 6, range)
 	local cf = CFrame.new(center, center + forward)
 	local parts = workspace:GetPartBoundsInBox(cf, size, params)
 	local targets = {}
@@ -91,8 +105,10 @@ end
 
 local function runActiveWindow(model: Model, actionName: string, catalogName: string, generation: number)
 	local s = getState(model)
-	local activeStart = Catalog.MarkerTime(catalogName, "ActiveStart")
-	local activeEnd = Catalog.MarkerTime(catalogName, "ActiveEnd")
+	local def = getDef(model)
+	local catalog = def.AnimationCatalog
+	local activeStart = catalog.MarkerTime(catalogName, "ActiveStart")
+	local activeEnd = catalog.MarkerTime(catalogName, "ActiveEnd")
 	if not activeStart or not activeEnd then
 		return
 	end
@@ -115,7 +131,7 @@ local function runActiveWindow(model: Model, actionName: string, catalogName: st
 		for target in pairs(queryHitbox(model)) do
 			if not hitThisSwing[target] then
 				hitThisSwing[target] = true
-				local dmg = ATTACK_DAMAGE[actionName] or 0
+				local dmg = (def.Stats.AttackDamage and def.Stats.AttackDamage[actionName]) or 0
 				ChickenCombatService.HitEvent:Fire(model, target, dmg, actionName)
 				firePlayerForModel(model, "Dealt", actionName, dmg)
 				firePlayerForModel(target, "Taken", actionName, dmg)
@@ -132,13 +148,15 @@ function ChickenCombatService.RequestAttack(model: Model): boolean
 		return false
 	end
 	local s = getState(model)
+	local def = getDef(model)
+	local catalog = def.AnimationCatalog
 	if s.busy and not s.comboWindowOpen then
 		return false
 	end
 	local nextStep = s.comboWindowOpen and math.min(s.comboStep + 1, 3) or 1
 	local actionName = ATTACK_CHAIN[nextStep]
 	local catalogName = ATTACK_CATALOG[actionName]
-	local entry = Catalog.Animations[catalogName]
+	local entry = catalog.Animations[catalogName]
 	if not ChickenStateService.SetAction(model, actionName) then
 		return false
 	end
@@ -152,8 +170,8 @@ function ChickenCombatService.RequestAttack(model: Model): boolean
 
 	runActiveWindow(model, actionName, catalogName, generation)
 
-	local comboOpenT = Catalog.MarkerTime(catalogName, "ComboOpen")
-	local comboCloseT = Catalog.MarkerTime(catalogName, "ComboClose")
+	local comboOpenT = catalog.MarkerTime(catalogName, "ComboOpen")
+	local comboCloseT = catalog.MarkerTime(catalogName, "ComboClose")
 	if comboOpenT then
 		task.delay(comboOpenT, function()
 			if s.generation == generation then
@@ -201,6 +219,8 @@ function ChickenCombatService.RequestDash(model: Model, direction: Vector3?): bo
 		return false
 	end
 	local s = getState(model)
+	local def = getDef(model)
+	local catalog = def.AnimationCatalog
 	if s.busy then
 		return false
 	end
@@ -219,9 +239,11 @@ function ChickenCombatService.RequestDash(model: Model, direction: Vector3?): bo
 	s.generation += 1
 	local generation = s.generation
 	local dir = sanitizeDirection(model, direction)
-	local entry = Catalog.Animations.Dash
-	local dashStartT = Catalog.MarkerTime("Dash", "DashStart") or 0.2
-	local dashEndT = Catalog.MarkerTime("Dash", "DashEnd") or (entry.Duration - 0.15)
+	local dashDistance = def.Stats.DashDistance or 24
+	local dashCooldown = def.Stats.DashCooldown or 2.5
+	local entry = catalog.Animations.Dash
+	local dashStartT = catalog.MarkerTime("Dash", "DashStart") or 0.2
+	local dashEndT = catalog.MarkerTime("Dash", "DashEnd") or (entry.Duration - 0.15)
 
 	task.delay(dashStartT, function()
 		if s.generation ~= generation or not hrp.Parent then
@@ -243,7 +265,7 @@ function ChickenCombatService.RequestDash(model: Model, direction: Vector3?): bo
 			end
 			local alpha = math.clamp(elapsed / dur, 0, 1)
 			local eased = 1 - (1 - alpha) ^ 2 -- ease-out, matches the animation's braking follow-through
-			local targetTraveled = DASH_DISTANCE * eased
+			local targetTraveled = dashDistance * eased
 			local step = targetTraveled - traveled
 			if step > 0 then
 				local params = RaycastParams.new()
@@ -260,13 +282,13 @@ function ChickenCombatService.RequestDash(model: Model, direction: Vector3?): bo
 		end)
 	end)
 
-	model:SetAttribute("DashCooldownDuration", DASH_COOLDOWN)
+	model:SetAttribute("DashCooldownDuration", dashCooldown)
 	task.delay(entry.Duration, function()
 		if s.generation == generation then
 			s.busy = false
-			s.dashReadyAt = os.clock() + DASH_COOLDOWN
+			s.dashReadyAt = os.clock() + dashCooldown
 			-- replicated for the HUD only; the authoritative check above still uses server-local os.clock()
-			model:SetAttribute("DashReadyAt", workspace:GetServerTimeNow() + DASH_COOLDOWN)
+			model:SetAttribute("DashReadyAt", workspace:GetServerTimeNow() + dashCooldown)
 			if model.Parent then
 				ChickenStateService.SetAction(model, "Idle")
 			end

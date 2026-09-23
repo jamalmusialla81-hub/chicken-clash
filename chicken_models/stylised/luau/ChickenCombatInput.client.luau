@@ -33,10 +33,16 @@ local camera = Workspace.CurrentCamera
 local combatFolder = ReplicatedStorage:WaitForChild("Combat")
 local attackRemote = combatFolder:WaitForChild("AttackRequest")
 local dashRemote = combatFolder:WaitForChild("DashRequest")
+local Controller = require(ReplicatedStorage:WaitForChild("ChickenClash"):WaitForChild("ChickenCombatCameraController"))
 
 local function isActive(): boolean
 	local state = player:GetAttribute("MatchState")
-	return state == "Active" or state == "Practice"
+	if state ~= "Active" and state ~= "Practice" then
+		return false
+	end
+	-- a settings/selection panel owns the mouse right now - attacks/dashes must not fire while a player is
+	-- trying to click a UI button, per the menu-state contract in ChickenCombatCameraController.
+	return not Controller.IsMenuOpen()
 end
 
 local function requestAttack()

@@ -17,20 +17,22 @@ local RunService = game:GetService("RunService")
 local CollectionService = game:GetService("CollectionService")
 
 local Controller = require(ReplicatedStorage:WaitForChild("ChickenClash"):WaitForChild("ChickenCombatCameraController"))
+local Theme = require(ReplicatedStorage:WaitForChild("ChickenClash"):WaitForChild("Theme"))
 local combatFolder = ReplicatedStorage:WaitForChild("Combat")
 local rematchRemote = combatFolder:WaitForChild("RematchRequest")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
-local GOLD = Color3.fromRGB(255, 214, 96)
-local PANEL = Color3.fromRGB(20, 16, 10)
-local RED = Color3.fromRGB(214, 60, 60)
+local GOLD = Theme.Colors.Gold
+local PANEL = Theme.Colors.Panel
+local RED = Theme.Colors.Danger
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MatchHUD"
 screenGui.ResetOnSpawn = false
-screenGui.IgnoreGuiInset = true
+-- Must respect CoreGui's safe insets (was true) - see the same fix in ChickenCombatHUD/PracticeHUD.
+screenGui.IgnoreGuiInset = false
 screenGui.DisplayOrder = 48
 screenGui.Parent = playerGui
 
@@ -100,7 +102,7 @@ local function cardLabel(xScale, text, size, color)
 	return l
 end
 
-local myCardLabel = cardLabel(0.25, "You\nGolden Chicken\nRare", 16, Color3.fromRGB(235, 230, 220))
+local myCardLabel = cardLabel(0.25, "You\nGolden Chicken\nRare", 16, Theme.Colors.Text)
 local vsLabel = Instance.new("TextLabel")
 vsLabel.BackgroundTransparency = 1
 vsLabel.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -111,14 +113,18 @@ vsLabel.TextSize = 18
 vsLabel.TextColor3 = GOLD
 vsLabel.Text = "VS"
 vsLabel.Parent = preFightCard
-local oppCardLabel = cardLabel(0.75, "Opponent\nGolden Chicken\nRare", 16, Color3.fromRGB(235, 230, 220))
+local oppCardLabel = cardLabel(0.75, "Opponent\nGolden Chicken\nRare", 16, Theme.Colors.Text)
 
---============================== round-win pips + timer (top centre, clear of the middle) ==============================--
+--============================== top status bar: opponent name/chicken/health + round-wins + timer ==============================--
+-- Spec: "opponent name, chicken, health and round wins at the top; match timer near the top centre." All
+-- of it lives in one cluster now instead of being split (health used to sit at bottom-left, doubling up
+-- with the player's own health there) - the opponent's status is always read from the top during Active,
+-- never competing with the player's own lower-left health for the same corner.
 local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
 topBar.AnchorPoint = Vector2.new(0.5, 0)
 topBar.Position = UDim2.new(0.5, 0, 0, 12)
-topBar.Size = UDim2.fromOffset(260, 40)
+topBar.Size = UDim2.fromOffset(280, 64)
 topBar.BackgroundTransparency = 1
 topBar.Visible = false
 topBar.Parent = screenGui
@@ -160,9 +166,45 @@ timerLabel.Size = UDim2.fromOffset(60, 20)
 timerLabel.BackgroundTransparency = 1
 timerLabel.Font = Enum.Font.GothamBold
 timerLabel.TextSize = 16
-timerLabel.TextColor3 = Color3.fromRGB(235, 230, 220)
+timerLabel.TextColor3 = Theme.Colors.Text
 timerLabel.Text = "0:60"
 timerLabel.Parent = topBar
+
+-- opponent name/chicken, small and centered directly under the timer - persists through Active, not just
+-- the Entrance pre-fight card, so "opponent name and chicken" stays visible at the top the whole match.
+local opponentInfoLabel = Instance.new("TextLabel")
+opponentInfoLabel.AnchorPoint = Vector2.new(0.5, 0)
+opponentInfoLabel.Position = UDim2.new(0.5, 0, 0, 22)
+opponentInfoLabel.Size = UDim2.fromOffset(240, 16)
+opponentInfoLabel.BackgroundTransparency = 1
+opponentInfoLabel.Font = Enum.Font.GothamMedium
+opponentInfoLabel.TextSize = 12
+opponentInfoLabel.TextColor3 = Theme.Colors.TextMuted
+opponentInfoLabel.Text = "Opponent"
+opponentInfoLabel.Parent = topBar
+
+-- opponent health bar, centered under the name - grouped with round-wins/timer at the top instead of
+-- doubling up with the player's own health bar in the lower-left corner.
+local opponentHealthBar = Instance.new("Frame")
+opponentHealthBar.Name = "OpponentHealthBar"
+opponentHealthBar.AnchorPoint = Vector2.new(0.5, 0)
+opponentHealthBar.Position = UDim2.new(0.5, 0, 0, 42)
+opponentHealthBar.Size = UDim2.fromOffset(160, 8)
+opponentHealthBar.BackgroundColor3 = Color3.fromRGB(20, 16, 10)
+opponentHealthBar.BorderSizePixel = 0
+opponentHealthBar.Parent = topBar
+panelCorner(opponentHealthBar, 4)
+local opponentHealthFill = Instance.new("Frame")
+opponentHealthFill.Name = "Fill"
+opponentHealthFill.BackgroundColor3 = RED
+opponentHealthFill.BorderSizePixel = 0
+opponentHealthFill.Size = UDim2.fromScale(1, 1)
+opponentHealthFill.Parent = opponentHealthBar
+panelCorner(opponentHealthFill, 4)
+local opponentHealthGradient = Instance.new("UIGradient")
+opponentHealthGradient.Color = ColorSequence.new(Color3.fromRGB(255, 140, 120), RED)
+opponentHealthGradient.Rotation = 90
+opponentHealthGradient.Parent = opponentHealthFill
 
 --============================== countdown (centre, but only during Countdown - never during Active) ==============================--
 local countdownLabel = Instance.new("TextLabel")
@@ -177,34 +219,6 @@ countdownLabel.TextStrokeTransparency = 0.5
 countdownLabel.Text = ""
 countdownLabel.Visible = false
 countdownLabel.Parent = screenGui
-
---============================== opponent health bar (stacked above the local one, bottom-left) ==============================--
-local opponentHealthBar = Instance.new("Frame")
-opponentHealthBar.Name = "OpponentHealthBar"
-opponentHealthBar.AnchorPoint = Vector2.new(0, 1)
-opponentHealthBar.Position = UDim2.new(0, 24, 1, -40)
-opponentHealthBar.Size = UDim2.fromOffset(160, 8)
-opponentHealthBar.BackgroundColor3 = Color3.fromRGB(20, 16, 10)
-opponentHealthBar.BorderSizePixel = 0
-opponentHealthBar.Visible = false
-opponentHealthBar.Parent = screenGui
-local opponentHealthFill = Instance.new("Frame")
-opponentHealthFill.Name = "Fill"
-opponentHealthFill.BackgroundColor3 = RED
-opponentHealthFill.BorderSizePixel = 0
-opponentHealthFill.Size = UDim2.fromScale(1, 1)
-opponentHealthFill.Parent = opponentHealthBar
-local opponentLabel = Instance.new("TextLabel")
-opponentLabel.AnchorPoint = Vector2.new(0, 1)
-opponentLabel.Position = UDim2.new(0, 0, 0, -14)
-opponentLabel.Size = UDim2.fromOffset(160, 12)
-opponentLabel.BackgroundTransparency = 1
-opponentLabel.Font = Enum.Font.GothamMedium
-opponentLabel.TextSize = 11
-opponentLabel.TextXAlignment = Enum.TextXAlignment.Left
-opponentLabel.TextColor3 = Color3.fromRGB(200, 195, 185)
-opponentLabel.Text = "Opponent"
-opponentLabel.Parent = opponentHealthBar
 
 --============================== combo feedback (small, above the reticle, never covering it) ==============================--
 local comboLabel = Instance.new("TextLabel")
@@ -251,7 +265,7 @@ resultScore.Size = UDim2.fromOffset(300, 24)
 resultScore.BackgroundTransparency = 1
 resultScore.Font = Enum.Font.GothamMedium
 resultScore.TextSize = 16
-resultScore.TextColor3 = Color3.fromRGB(230, 230, 230)
+resultScore.TextColor3 = Theme.Colors.Text
 resultScore.Text = "Rounds: 2 - 0"
 resultScore.Parent = resultsPanel
 
@@ -262,43 +276,47 @@ rewardLabel.Size = UDim2.fromOffset(300, 40)
 rewardLabel.BackgroundTransparency = 1
 rewardLabel.Font = Enum.Font.Gotham
 rewardLabel.TextSize = 13
-rewardLabel.TextColor3 = Color3.fromRGB(190, 185, 175)
+rewardLabel.TextColor3 = Theme.Colors.TextMuted
 rewardLabel.TextWrapped = true
 -- honest placeholder: reward integration is a later phase of this brief and does not exist yet - never
 -- fabricate a currency amount the server did not actually grant.
 rewardLabel.Text = "Rewards: coming soon"
 rewardLabel.Parent = resultsPanel
 
-local function resultButton(text, xOffset)
-	local b = Instance.new("TextButton")
-	b.AnchorPoint = Vector2.new(0.5, 1)
-	b.Position = UDim2.new(0.5, xOffset, 1, -24)
-	b.Size = UDim2.fromOffset(150, 44) -- comfortably large touch target
-	b.BackgroundColor3 = PANEL
-	b.BackgroundTransparency = 0.1
-	b.TextColor3 = Color3.fromRGB(235, 230, 220)
-	b.Font = Enum.Font.GothamBold
-	b.TextSize = 15
-	b.AutoButtonColor = true
-	b.Text = text
-	b.Parent = resultsPanel
-	panelCorner(b, 8)
-	local stroke = panelStroke(b, 0.35)
-	b.MouseEnter:Connect(function() stroke.Color = Color3.fromRGB(255, 232, 160) end)
-	b.MouseLeave:Connect(function() stroke.Color = GOLD end)
-	b.SelectionImageObject = nil -- gamepad focus uses the default selection box; keep default behavior
-	return b
-end
+local buttonRow = Instance.new("Frame")
+buttonRow.Name = "ButtonRow"
+buttonRow.AnchorPoint = Vector2.new(0.5, 1)
+buttonRow.Position = UDim2.new(0.5, 0, 1, -20)
+buttonRow.Size = UDim2.fromOffset(340, 56)
+buttonRow.BackgroundTransparency = 1
+buttonRow.Parent = resultsPanel
+local buttonRowLayout = Instance.new("UIListLayout")
+buttonRowLayout.FillDirection = Enum.FillDirection.Horizontal
+buttonRowLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+buttonRowLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+buttonRowLayout.Padding = UDim.new(0, 16)
+buttonRowLayout.Parent = buttonRow
 
-local rematchButton = resultButton("Rematch", -80)
-local lobbyButton = resultButton("Return to Lobby", 80)
-lobbyButton.Size = UDim2.fromOffset(160, 44)
+local rematchButtonApi = Theme.Button(buttonRow, {
+	name = "Rematch",
+	text = "Rematch",
+	size = UDim2.fromOffset(150, 48),
+	topColor = Theme.Colors.Gold,
+	bottomColor = Theme.Colors.GoldDim,
+})
+local lobbyButtonApi = Theme.Button(buttonRow, {
+	name = "ReturnToLobby",
+	text = "Return to Lobby",
+	size = UDim2.fromOffset(160, 48),
+	topColor = Theme.Colors.PanelRaised,
+	bottomColor = Theme.Colors.Panel,
+})
 
-rematchButton.MouseButton1Click:Connect(function()
+rematchButtonApi.face.MouseButton1Click:Connect(function()
 	rematchRemote:FireServer()
 	resultsPanel.Visible = false
 end)
-lobbyButton.MouseButton1Click:Connect(function()
+lobbyButtonApi.face.MouseButton1Click:Connect(function()
 	-- purely a local dismissal - MatchService already tears the match down and calls LoadCharacter on its
 	-- own RETURN_DELAY timer regardless of this button; this just lets an impatient player stop looking at
 	-- the results screen early instead of actually forcing an early server-side return.
@@ -311,11 +329,13 @@ local shownForResultsThisMatch = false
 local function updateOpponentCard()
 	local myName = player:GetAttribute("MatchChickenName") or "Golden Chicken"
 	local myRarity = player:GetAttribute("MatchChickenRarity") or "Rare"
-	local oppName = player:GetAttribute("MatchChickenName") or "Golden Chicken" -- opponent's OWN chicken, not mine
+	local oppChickenName = player:GetAttribute("MatchOpponentChickenName") or "Golden Chicken"
 	local oppRarity = player:GetAttribute("MatchOpponentChickenRarity") or "Rare"
 	local oppPlayerName = player:GetAttribute("MatchOpponentName") or "Opponent"
 	myCardLabel.Text = ("You\n%s\n%s"):format(myName, myRarity)
-	oppCardLabel.Text = ("%s\n%s\n%s"):format(oppPlayerName, player:GetAttribute("MatchOpponentChickenName") or oppName, oppRarity)
+	oppCardLabel.Text = ("%s\n%s\n%s"):format(oppPlayerName, oppChickenName, oppRarity)
+	-- top-bar summary, kept up through Active too (the pre-fight card only shows during Entrance)
+	opponentInfoLabel.Text = ("%s - %s"):format(oppPlayerName, oppChickenName)
 end
 
 local function updatePips()
@@ -344,7 +364,7 @@ RunService.RenderStepped:Connect(function(dt)
 	countdownLabel.Visible = state == "Countdown"
 	opponentHealthBar.Visible = state == "Active" or state == "RoundEnd"
 
-	if state == "Entrance" then
+	if state == "Entrance" or state == "Preparing" then
 		updateOpponentCard()
 	end
 

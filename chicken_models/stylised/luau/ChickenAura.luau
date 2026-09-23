@@ -3,6 +3,7 @@
 	Quality: 0 = off, 1 = low (crest only), 2 = full. Emitters are created once per chicken and reused (never per burst);
 	the crest disc comes from a small shared pool. Everything is removed by :Destroy(). ]]
 local UserGameSettings = UserSettings():GetService("UserGameSettings")
+local Debris = game:GetService("Debris")
 
 local Aura = {}
 Aura.__index = Aura
@@ -218,11 +219,151 @@ function Aura:_buildAttackEmitters()
 	end
 end
 
+--============================== beam slash rig (pooled) ==============================--
+-- Real gap this closes: the only "slash" feedback before this was small particle bursts at the wing
+-- attachments - never an actual claw-mark arc crossing the view, which the VFX rebuild spec calls for
+-- explicitly. Three curved Beam attachments, alternating direction per attack in the combo, pooled and
+-- returned after each play rather than created/destroyed per swing.
+local SLASH_RIG_POOL: { Model } = {}
+local SLASH_DIRECTIONS = {
+	Attack1 = 1, -- left-to-right
+	Attack2 = -1, -- right-to-left
+	Attack3 = 1, -- left-to-right, wider/brighter (finisher)
+}
+
+local function buildSlashArc(rig: Model, index: number, radius: number)
+	local a0 = Instance.new("Attachment")
+	a0.Name = "A0_" .. index
+	a0.Position = Vector3.new(-radius, (index - 2) * 0.35, 0)
+	a0.Parent = rig.PrimaryPart
+
+	local a1 = Instance.new("Attachment")
+	a1.Name = "A1_" .. index
+	a1.Position = Vector3.new(radius, (index - 2) * 0.35, 0)
+	a1.Parent = rig.PrimaryPart
+
+	local beam = Instance.new("Beam")
+	beam.Name = "SlashBeam" .. index
+	beam.Attachment0 = a0
+	beam.Attachment1 = a1
+	beam.FaceCamera = true
+	beam.Segments = 16
+	beam.CurveSize0 = radius * 0.9
+	beam.CurveSize1 = -radius * 0.9
+	beam.Width0 = 0
+	beam.Width1 = 0
+	beam.Color = ColorSequence.new({
+		ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 250, 235)), -- narrow bright cream core
+		ColorSequenceKeypoint.new(0.5, GOLD),
+		ColorSequenceKeypoint.new(1, Color3.fromRGB(233, 130, 50)), -- wider orange/gold outer edge
+	})
+	beam.Transparency = NumberSequence.new({
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.15, 0.1),
+		NumberSequenceKeypoint.new(0.85, 0.1),
+		NumberSequenceKeypoint.new(1, 1),
+	})
+	beam.TextureSpeed = 3
+	beam.TextureLength = 1
+	beam.LightEmission = 0.9
+	beam.Parent = rig.PrimaryPart
+	return beam
+end
+
+local function newSlashRig(): Model
+	local rig = Instance.new("Model")
+	rig.Name = "SlashRig"
+	local root = Instance.new("Part")
+	root.Name = "Root"
+	root.Anchored = true
+	root.CanCollide, root.CanTouch, root.CanQuery, root.CastShadow = false, false, false, false
+	root.Transparency = 1
+	root.Size = Vector3.new(0.2, 0.2, 0.2)
+	root.Parent = rig
+	rig.PrimaryPart = root
+	local beams = {}
+	for i = 1, 3 do
+		table.insert(beams, buildSlashArc(rig, i, 3 + i * 0.4))
+	end
+	rig:SetAttribute("BeamCount", #beams)
+	rig.Parent = workspace
+	return rig
+end
+
+local function takeSlashRig(): Model
+	local rig = table.remove(SLASH_RIG_POOL)
+	return rig or newSlashRig()
+end
+
+local function returnSlashRig(rig: Model)
+	rig.Parent = nil
+	table.insert(SLASH_RIG_POOL, rig)
+end
+
+-- Plays the three-arc slash in front of the given attachment, oriented along `direction` (1 or -1), and
+-- animates width 0 -> peak -> 0 over the swing plus a quick rotation sweep (the "tween the parent's
+-- rotation to create rapid slash motion" step). Returns the rig to the pool when done.
+local function playSlashRig(anchor: Attachment, direction: number, scale: number)
+	local rig = takeSlashRig()
+	local root = rig.PrimaryPart
+	local baseCFrame = anchor.WorldCFrame * CFrame.Angles(0, direction > 0 and 0 or math.pi, 0)
+	root.CFrame = baseCFrame
+	root.Parent = rig
+
+	local beams = {}
+	for _, child in ipairs(root:GetChildren()) do
+		if child:IsA("Beam") then
+			table.insert(beams, child)
+		end
+	end
+
+	local DURATION = 0.16
+	task.spawn(function()
+		local startTime = os.clock()
+		local sweepStart = baseCFrame * CFrame.Angles(0, math.rad(-35), 0)
+		local sweepEnd = baseCFrame * CFrame.Angles(0, math.rad(35), 0)
+		while true do
+			local elapsed = os.clock() - startTime
+			local alpha = math.clamp(elapsed / DURATION, 0, 1)
+			-- width envelope: 0 -> peak -> 0
+			local widthAlpha = alpha < 0.5 and (alpha * 2) or (1 - (alpha - 0.5) * 2)
+			for _, beam in ipairs(beams) do
+				beam.Width0 = widthAlpha * 0.15 * scale
+				beam.Width1 = widthAlpha * 1.1 * scale
+			end
+			root.CFrame = sweepStart:Lerp(sweepEnd, alpha)
+			if alpha >= 1 then
+				break
+			end
+			task.wait()
+		end
+		for _, beam in ipairs(beams) do
+			beam.Width0, beam.Width1 = 0, 0
+		end
+		returnSlashRig(rig)
+	end)
+end
+
 -- name: "Attack1"|"Attack2"|"Attack3". Compact arcs for the first two hits, a heavier impact ring
 -- (with the finisher's restrained deep-red accent) for the third, matching the brief's per-hit VFX spec.
+-- Also plays the beam slash rig, alternating arc direction per attack in the combo (M1_1/M1_2/M1_3 each
+-- read as a distinct slash, not the same animation replayed three times).
 function Aura:AttackEffect(name: string)
 	if self.quality < 1 then
 		return
+	end
+	local anchor = self.model:FindFirstChild("FinisherTarget", true) or self.model:FindFirstChild("Chest", true)
+	local direction = SLASH_DIRECTIONS[name] or 1
+	if anchor then
+		if anchor:IsA("BasePart") then
+			-- FinisherTarget/Chest may be a Part rather than an Attachment - use its centre as an anchor
+			local temp = Instance.new("Attachment")
+			temp.WorldCFrame = anchor.CFrame
+			playSlashRig(temp, direction, name == "Attack3" and 1.4 or 1)
+			temp:Destroy()
+		else
+			playSlashRig(anchor, direction, name == "Attack3" and 1.4 or 1)
+		end
 	end
 	if name == "Attack1" and self.leftArc then
 		self.leftArc:Emit(self.firstPerson and 4 or 10)
@@ -231,6 +372,78 @@ function Aura:AttackEffect(name: string)
 	elseif name == "Attack3" and self.impactRing then
 		self.impactRing:Emit(self.firstPerson and 8 or 20)
 	end
+end
+
+-- Real gap this closes: confirmed-hit feedback (shake/recoil/hitmarker/damage numbers) existed, but
+-- nothing produced the "tiny PointLight flash" the impact-feel spec calls for. One-shot, pooled-by-reuse
+-- (a single light per chicken, just re-triggered) rather than spawning a new instance per hit.
+function Aura:ImpactFlash()
+	if self.quality < 1 then
+		return
+	end
+	local anchor = self.model:FindFirstChild("FinisherTarget", true) or self.model.PrimaryPart
+	if not anchor then
+		return
+	end
+	if not self.impactLight then
+		local light = Instance.new("PointLight")
+		light.Name = "ImpactFlash"
+		light.Color = Color3.fromRGB(255, 232, 160)
+		light.Range = 10
+		light.Brightness = 0
+		light.Parent = anchor:IsA("Attachment") and anchor or anchor
+		self.impactLight = light
+	end
+	self.impactLight.Brightness = 4
+	task.delay(0.12, function()
+		if self.impactLight then
+			self.impactLight.Brightness = 0
+		end
+	end)
+end
+
+-- Real gap this closes: dash had a streak Trail but nothing marked WHERE it ended - the "completion dust"/
+-- "ground debris" step. Raycasts straight down from the chicken so the dust genuinely reacts to whatever
+-- surface it lands on (Practice Range floor, arena ground, portal disc, etc.) instead of a fixed color;
+-- reuses the same SPARKLE texture already proven elsewhere in this file rather than an unverified new asset.
+local function spawnDashDust(model: Model)
+	local hrp = model:FindFirstChild("HumanoidRootPart")
+	if not hrp then
+		return
+	end
+	local params = RaycastParams.new()
+	params.FilterType = Enum.RaycastFilterType.Exclude
+	params.FilterDescendantsInstances = { model }
+	local result = workspace:Raycast(hrp.Position, Vector3.new(0, -8, 0), params)
+	if not result then
+		return
+	end
+	local groundColor = (result.Instance :: BasePart).Color or Color3.fromRGB(200, 200, 190)
+
+	local anchor = Instance.new("Part")
+	anchor.Name = "DashDustAnchor"
+	anchor.Anchored = true
+	anchor.CanCollide, anchor.CanTouch, anchor.CanQuery, anchor.CastShadow = false, false, false, false
+	anchor.Transparency = 1
+	anchor.Size = Vector3.new(0.2, 0.2, 0.2)
+	anchor.CFrame = CFrame.new(result.Position)
+	anchor.Parent = workspace
+
+	local dust = Instance.new("ParticleEmitter")
+	dust.Texture = SPARKLE
+	dust.Color = ColorSequence.new(groundColor:Lerp(Color3.new(1, 1, 1), 0.35))
+	dust.LightEmission = 0
+	dust.Size = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 1.6) })
+	dust.Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0.5), NumberSequenceKeypoint.new(1, 1) })
+	dust.Lifetime = NumberRange.new(0.35, 0.6)
+	dust.Rate = 0
+	dust.Speed = NumberRange.new(3, 6)
+	dust.SpreadAngle = Vector2.new(50, 15)
+	dust.Acceleration = Vector3.new(0, -6, 0)
+	dust.Parent = anchor
+	dust:Emit(10)
+
+	Debris:AddItem(anchor, 1)
 end
 
 function Aura:DashEffect(startOrEnd: string)
@@ -243,6 +456,9 @@ function Aura:DashEffect(startOrEnd: string)
 	end
 	if self.dashTrailRight then
 		self.dashTrailRight.Enabled = enable
+	end
+	if startOrEnd == "End" then
+		spawnDashDust(self.model)
 	end
 end
 
@@ -303,7 +519,7 @@ function Aura:Destroy(keepModel: boolean?)
 		table.insert(crestPool, self.crest)
 		self.crest = nil
 	end
-	for _, k in ipairs({ "feathers", "glint", "outline", "leftArc", "rightArc", "impactRing", "dashTrailLeft", "dashTrailRight" }) do
+	for _, k in ipairs({ "feathers", "glint", "outline", "leftArc", "rightArc", "impactRing", "dashTrailLeft", "dashTrailRight", "impactLight" }) do
 		if self[k] then
 			self[k]:Destroy()
 			self[k] = nil

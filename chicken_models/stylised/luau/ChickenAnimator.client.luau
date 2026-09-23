@@ -31,7 +31,7 @@ local Loco = require(folder:WaitForChild("ChickenLocomotion"))
 local Idle = require(folder:WaitForChild("ChickenIdle"))
 local Poses = require(folder:WaitForChild("ChickenPoses"))
 local Aura = require(folder:WaitForChild("ChickenAura"))
-local Catalog = require(folder:WaitForChild("GoldenChickenAnimationCatalog"))
+local ChickenDefinitions = require(folder:WaitForChild("ChickenDefinitions"))
 local AuraRegistry = require(folder:WaitForChild("ChickenAuraRegistry"))
 local SoundKit = require(folder:WaitForChild("ChickenSoundKit"))
 
@@ -59,20 +59,24 @@ local AURA_BURST_STATES = { Entrance = true, Victory = true, Attack1 = true, Att
 local active = {}
 local pending = {} -- model -> true while a retry loop is in flight, so attach() is idempotent under repeated signals
 
--- one Animation instance + preload per catalog entry that is actually ready; built once at module load
--- and rebuilt if nothing was ready yet (Jakob uploads while the server is running).
-local animationInstances = {}
-local function buildAnimationInstances()
-	for name, entry in pairs(Catalog.Animations) do
-		if Catalog.IsReady(name) and not animationInstances[name] then
+-- one Animation instance + preload per (chicken definition, catalog entry) that is actually ready; built
+-- once at module load per definition in ChickenDefinitions.List, and rebuilt if nothing was ready yet
+-- (Jakob uploads while the server is running). Phase 6: keyed by defId since more than one chicken
+-- definition can now exist, even though today only "Golden" has any IsReady() entries.
+local animationInstances = {} -- defId -> { [catalogName] = Animation }
+local function buildAnimationInstances(defId, catalog)
+	local cache = animationInstances[defId] or {}
+	animationInstances[defId] = cache
+	for name, entry in pairs(catalog.Animations) do
+		if catalog.IsReady(name) and not cache[name] then
 			local anim = Instance.new("Animation")
 			anim.Name = name
 			anim.AnimationId = "rbxassetid://" .. tostring(entry.AssetId)
-			animationInstances[name] = anim
+			cache[name] = anim
 		end
 	end
 	local toPreload = {}
-	for _, anim in pairs(animationInstances) do
+	for _, anim in pairs(cache) do
 		table.insert(toPreload, anim)
 	end
 	if #toPreload > 0 then
@@ -81,13 +85,16 @@ local function buildAnimationInstances()
 		end)
 	end
 end
-buildAnimationInstances()
+for defId, def in pairs(ChickenDefinitions.List) do
+	buildAnimationInstances(defId, def.AnimationCatalog)
+end
 
 local function getOrLoadTrack(a, catalogName)
 	if a.tracks[catalogName] then
 		return a.tracks[catalogName]
 	end
-	local anim = animationInstances[catalogName]
+	local cache = animationInstances[a.defId]
+	local anim = cache and cache[catalogName]
 	if not anim or not a.animator then
 		return nil
 	end
@@ -97,9 +104,12 @@ local function getOrLoadTrack(a, catalogName)
 	if not ok or not track then
 		return nil
 	end
-	local entry = Catalog.Animations[catalogName]
+	local entry = a.catalog.Animations[catalogName]
 	track.Priority = entry.Priority
 	track.Looped = entry.Loop
+	if a.playbackSpeed and a.playbackSpeed ~= 1 then
+		track:AdjustSpeed(a.playbackSpeed)
+	end
 	for _, markerName in ipairs(entry.Markers) do
 		track:GetMarkerReachedSignal(markerName):Connect(function(value)
 			a.markerEvent:Fire(catalogName, markerName, value)
@@ -153,10 +163,13 @@ local function doAttach(model)
 	SoundKit.Preload(model)
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	local animator = humanoid and humanoid:FindFirstChildOfClass("Animator")
+	local defId = model:GetAttribute("ChickenDefId") or ChickenDefinitions.DefaultId
+	local def = ChickenDefinitions.Get(defId) or ChickenDefinitions.Get(ChickenDefinitions.DefaultId)
 	local a = {
 		loco = loco, aura = aura, poses = poses, conns = {},
 		animator = animator, tracks = {}, currentTrack = nil, currentTrackName = nil,
 		markerEvent = Instance.new("BindableEvent"),
+		defId = defId, catalog = def.AnimationCatalog, playbackSpeed = def.PlaybackSpeedMultiplier or 1,
 	}
 	active[model] = a
 
@@ -205,7 +218,7 @@ local function doAttach(model)
 			return
 		end
 
-		if Catalog.IsReady(state.catalog) and a.animator then
+		if a.catalog.IsReady(state.catalog) and a.animator then
 			poses:Stop()
 			local track = getOrLoadTrack(a, state.catalog)
 			if track and a.currentTrackName ~= state.catalog then

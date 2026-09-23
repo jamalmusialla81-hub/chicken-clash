@@ -13,6 +13,13 @@
 
 local SoundService = game:GetService("SoundService")
 
+-- Structural sound architecture (Phase 8): every pooled Sound routes through one of these two groups so a
+-- future settings panel has exactly one Volume to turn down for "music" vs "everything else" - not
+-- fabricating a mixer beyond what two groups need. Both are created once (idempotently) in Studio; if
+-- somehow missing at runtime, sounds simply play ungrouped rather than erroring.
+local SFX_GROUP = SoundService:FindFirstChild("Sfx")
+local MUSIC_GROUP = SoundService:FindFirstChild("Music")
+
 local Kit = {}
 
 local SOUNDS = {
@@ -56,6 +63,7 @@ local function getOrCreate(model: Model, name: string): Sound?
 		sound.SoundId = def.id
 		sound.Volume = def.volume
 		sound.RollOffMaxDistance = 60
+		sound.SoundGroup = (def.category == "Music") and MUSIC_GROUP or SFX_GROUP
 		sound.Parent = hrp
 		byName[name] = sound
 	end
